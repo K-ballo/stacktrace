@@ -1,0 +1,175 @@
+# Copyright (c) 2026 Agustin Berge
+#
+# Distributed under the Boost Software License, Version 1.0.
+# See accompanying file LICENSE.txt or copy at 
+# http://www.boost.org/LICENSE_1_0.txt
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    name: ${{ matrix.os }} / ${{ matrix.compiler }}
+    runs-on: ${{ matrix.os }}
+    if: ${{ !github.event.repository.fork }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # -- Linux / GCC 16 --
+          - os: ubuntu-24.04
+            compiler: gcc-16
+            preset: dev-gcc
+            package_suffix: Linux-gcc-16
+
+          # -- Linux / Clang 22 --
+          - os: ubuntu-24.04
+            compiler: clang-22
+            preset: dev-clang
+            package_suffix: Linux-clang-22
+
+          # -- Linux / Clang 22 + libc++ --
+          - os: ubuntu-24.04
+            compiler: clang-22+libc++
+            preset: dev-clang-libcxx
+            package_suffix: Linux-clang-22-libcxx
+
+          # -- Windows 2025 / MSVC 2026 --
+          - os: windows-2025-vs2026
+            compiler: msvc-2026
+            preset: dev-msvc
+            package_suffix: win64-msvc
+
+          # -- Windows 2025 / Clang-CL 20 --
+          - os: windows-2025-vs2026
+            compiler: clang-cl-20
+            preset: dev-clang-cl
+            package_suffix: win64-clang-cl-20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Set up MSVC environment
+        if: startsWith(matrix.compiler, 'msvc') || startsWith(matrix.compiler, 'clang-cl')
+        shell: pwsh
+        run: |
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+              -latest -property installationPath
+          $vcvars = "$vsPath\VC\Auxiliary\Build\vcvars64.bat"
+          cmd /c "`"$vcvars`" && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+              "$($Matches[1])=$($Matches[2])" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+          }
+
+      - name: Set up APT package cache
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p ~/.cache/apt/archives/partial
+          echo "Dir::Cache::archives \"$HOME/.cache/apt/archives\";" \
+            | sudo tee /etc/apt/apt.conf.d/99user-cache
+
+      - name: Cache APT packages
+        if: runner.os == 'Linux'
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/apt/archives
+          key: apt-${{ matrix.os }}-${{ matrix.compiler }}-${{ hashFiles('.github/workflows/release.yml') }}
+          restore-keys: apt-${{ matrix.os }}-${{ matrix.compiler }}-
+
+      - name: Install GCC 16
+        if: matrix.compiler == 'gcc-16'
+        run: |
+          sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
+          sudo apt-get update -q
+          sudo apt-get install -y gcc-16 g++-16
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-16 100 \
+                                   --slave /usr/bin/g++ g++ /usr/bin/g++-16
+
+      - name: Install Clang 22
+        if: startsWith(matrix.compiler, 'clang-22')
+        run: |
+          wget -q https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh 22 all
+          sudo update-alternatives --install /usr/bin/clang   clang   /usr/bin/clang-22   200
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-22 200
+
+      - name: Install Ninja
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y ninja-build
+
+      - name: Fix APT cache permissions
+        if: always() && runner.os == 'Linux'
+        run: sudo rm -rf ~/.cache/apt/archives/lock ~/.cache/apt/archives/partial
+
+      - name: Configure (static)
+        run: cmake --preset ${{ matrix.preset }} -B build/${{ matrix.preset }}-static
+
+      - name: Build (static, Release)
+        run: cmake --build build/${{ matrix.preset }}-static --config Release
+
+      - name: Package (static)
+        working-directory: build/${{ matrix.preset }}-static
+        run: cpack -C Release -D "CPACK_PACKAGE_FILE_NAME=Eggs.Stacktrace-${{ github.ref_name }}-${{ matrix.package_suffix }}-static"
+
+      - name: Configure (shared)
+        run: cmake --preset ${{ matrix.preset }} -B build/${{ matrix.preset }}-shared
+               -DBUILD_SHARED_LIBS=ON
+
+      - name: Build (shared, Release)
+        run: cmake --build build/${{ matrix.preset }}-shared --config Release
+
+      - name: Package (shared)
+        working-directory: build/${{ matrix.preset }}-shared
+        run: cpack -C Release -D "CPACK_PACKAGE_FILE_NAME=Eggs.Stacktrace-${{ github.ref_name }}-${{ matrix.package_suffix }}-shared"
+
+      - name: Stage packages
+        shell: bash
+        run: |
+          mkdir packages
+          shopt -s nullglob
+          cp build/${{ matrix.preset }}-static/Eggs.Stacktrace-*.tar.gz \
+             build/${{ matrix.preset }}-static/Eggs.Stacktrace-*.zip \
+             build/${{ matrix.preset }}-shared/Eggs.Stacktrace-*.tar.gz \
+             build/${{ matrix.preset }}-shared/Eggs.Stacktrace-*.zip \
+             packages/
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v6
+        with:
+          name: packages-${{ matrix.compiler }}
+          path: packages/
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v7
+        with:
+          pattern: packages-*
+          merge-multiple: true
+          path: packages/
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create ${{ github.ref_name }} \
+            --title "${{ github.ref_name }}" \
+            --generate-notes \
+            --draft \
+            --repo ${{ github.repository }}
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload ${{ github.ref_name }} \
+            packages/* \
+            --repo ${{ github.repository }}

@@ -1,0 +1,13 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/eggs.stacktrace-targets.cmake")
+
+# Create the canonical Eggs::Stacktrace alias for the configured default backend.
+if(NOT TARGET Eggs::Stacktrace)
+    add_library(
+        Eggs::Stacktrace
+        ALIAS Eggs::Stacktrace::@EGGS_STACKTRACE_DEFAULT_BACKEND_EXPORT@
+    )
+endif()
+
+check_required_components(Eggs.Stacktrace)

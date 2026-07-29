@@ -1,0 +1,397 @@
+# Eggs.Stacktrace
+#
+# Copyright (c) 2026 Agustin Berge
+#
+# Distributed under the Boost Software License, Version 1.0.
+# See accompanying file LICENSE.txt or copy at
+# http://www.boost.org/LICENSE_1_0.txt
+
+name: test
+
+on:
+  push:
+    branches: [ main, feature/** ]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  build:
+    name: ${{ matrix.os }} / ${{ matrix.compiler }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # -- Linux / GCC -----------------------------------------------------
+          - { os: ubuntu-22.04, compiler: gcc-11, cxxstds: "11 14 17 20 23", preset: dev-gcc, cc: gcc-11, cxx: g++-11, packages: "gcc-11 g++-11" }
+          - { os: ubuntu-22.04, compiler: gcc-12, cxxstds: "11 14 17 20 23", preset: dev-gcc, cc: gcc-12, cxx: g++-12, packages: "gcc-12 g++-12" }
+          - { os: ubuntu-24.04, compiler: gcc-13, cxxstds: "11 14 17 20 23", preset: dev-gcc, cc: gcc-13, cxx: g++-13, packages: "gcc-13 g++-13" }
+          - { os: ubuntu-24.04, compiler: gcc-14, cxxstds: "11 14 17 20 23 26", preset: dev-gcc, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14" }
+          - { os: ubuntu-24.04, compiler: gcc-15, cxxstds: "11 14 17 20 23 26", preset: dev-gcc, cc: gcc-15, cxx: g++-15, packages: "gcc-15 g++-15", ppa: ubuntu-toolchain-r }
+          - { os: ubuntu-24.04, compiler: gcc-16, cxxstds: "11 14 17 20 23 26", preset: dev-gcc, cc: gcc-16, cxx: g++-16, packages: "gcc-16 g++-16", ppa: ubuntu-toolchain-r }
+          # -- Linux / Clang ----------------------------------------------------
+          - { os: ubuntu-24.04, compiler: clang-17, cxxstds: "11 14 17 20 23", preset: dev-clang, cc: clang-17, cxx: clang++-17, packages: "clang-17 clang-tools-17" }
+          - { os: ubuntu-24.04, compiler: clang-18, cxxstds: "11 14 17 20 23", preset: dev-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 clang-tools-18" }
+          - { os: ubuntu-24.04, compiler: clang-19, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-19, cxx: clang++-19, packages: "clang-19 clang-tools-19" }
+          - { os: ubuntu-24.04, compiler: clang-20, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-20, cxx: clang++-20, packages: "clang-20 clang-tools-20", llvm_ver: "20" }
+          - { os: ubuntu-24.04, compiler: clang-22, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-22, cxx: clang++-22, packages: "clang-22 clang-tools-22", llvm_ver: "22" }
+          # -- Linux / Clang + libc++ -------------------------------------------
+          - { os: ubuntu-24.04, compiler: clang-19-libcxx, cxxstds: "11 14 17 20 23 26", preset: dev-clang-libcxx, cc: clang-19, cxx: clang++-19, packages: "clang-19 clang-tools-19 libc++-19-dev libc++abi-19-dev" }
+          - { os: ubuntu-24.04, compiler: clang-22-libcxx, cxxstds: "11 14 17 20 23 26", preset: dev-clang-libcxx, cc: clang-22, cxx: clang++-22, packages: "clang-22 clang-tools-22 libc++-22-dev libc++abi-22-dev", llvm_ver: "22" }
+          # -- Windows / MSVC ---------------------------------------------------
+          - { os: windows-2022, compiler: msvc-2022, cxxstds: "14 17 20 23", preset: dev-msvc }
+          - { os: windows-2025-vs2026, compiler: msvc-2026, cxxstds: "14 17 20 23", preset: dev-msvc }
+          # -- Windows / Clang-CL ------------------------------------------------
+          - { os: windows-2025-vs2026, compiler: clang-cl-20, cxxstds: "14 17 20 23 26", preset: dev-clang-cl }
+          # -- macOS / Apple Clang ----------------------------------------------
+          - { os: macos-15, compiler: apple-clang-16, cxxstds: "11 14 17 20 23 26", preset: dev-clang }
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "4.4.0"
+
+      # -- Windows: activate MSVC Developer Command Prompt ---------------------
+      - name: Set up MSVC environment
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+              -latest -property installationPath
+          $vcvars = "$vsPath\VC\Auxiliary\Build\vcvars64.bat"
+          cmd /c "`"$vcvars`" && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+              "$($Matches[1])=$($Matches[2])" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+          }
+
+      # -- Linux: add optional extra APT sources before install -------------
+      - name: Add ubuntu-toolchain-r PPA
+        if: matrix.ppa == 'ubuntu-toolchain-r'
+        run: |
+          sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+
+      - name: Add LLVM APT source
+        if: runner.os == 'Linux' && matrix.llvm_ver != ''
+        run: |
+          CODENAME=$(lsb_release -cs)
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
+            | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+          echo "deb http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${{ matrix.llvm_ver }} main" \
+            | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update
+
+      # -- Linux: cache and install APT packages ----------------------------
+      - name: Set up APT package cache
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p ~/.cache/apt/archives/partial
+          echo "Dir::Cache::archives \"$HOME/.cache/apt/archives\";" \
+            | sudo tee /etc/apt/apt.conf.d/99user-cache
+
+      - name: Cache APT packages
+        if: runner.os == 'Linux'
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/apt/archives
+          key: apt-${{ matrix.os }}-${{ matrix.compiler }}-${{ hashFiles('.github/workflows/test.yml') }}
+          restore-keys: apt-${{ matrix.os }}-${{ matrix.compiler }}-
+
+      - name: Install Linux tools and compiler
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y --no-install-recommends ninja-build ${{ matrix.packages }}
+
+      - name: Fix APT cache permissions
+        if: always() && runner.os == 'Linux'
+        run: sudo rm -rf ~/.cache/apt/archives/lock ~/.cache/apt/archives/partial
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install ninja
+
+      # -----------------------------------------------------------------------
+      # Main project
+      # -----------------------------------------------------------------------
+      - name: Build and test
+        id: build_and_test
+        shell: bash
+        run: |
+          compiler_args=()
+          if [ -n "${{ matrix.cc }}" ]; then
+            compiler_args+=(-DCMAKE_C_COMPILER=${{ matrix.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }})
+          fi
+
+          overall_failed=0
+          for std in ${{ matrix.cxxstds }}; do
+            std_failed=0
+
+            echo "::group::Configure C++${std}"
+            cmake --preset ${{ matrix.preset }} -B build/${{ matrix.preset }}-cxx${std} \
+              "${compiler_args[@]}" \
+              -DBUILD_EXAMPLES=ON -DBUILD_TESTING=ON \
+              -DCMAKE_CXX_STANDARD=${std} || std_failed=1
+            echo "::endgroup::"
+
+            if [ $std_failed -eq 0 ]; then
+              echo "::group::Build Debug C++${std}"
+              cmake --build build/${{ matrix.preset }}-cxx${std} --config Debug -- -k 0 || std_failed=1
+              echo "::endgroup::"
+            fi
+
+            if [ $std_failed -eq 0 ]; then
+              echo "::group::Test Debug C++${std}"
+              ctest --test-dir build/${{ matrix.preset }}-cxx${std} --build-config Debug \
+                --label-regex header --output-on-failure --no-compress-output \
+                --output-junit test-results-${{ matrix.compiler }}-cxx${std}-debug-header.xml || std_failed=1
+              ctest --test-dir build/${{ matrix.preset }}-cxx${std} --build-config Debug \
+                --label-regex unit --output-on-failure --no-compress-output \
+                --output-junit test-results-${{ matrix.compiler }}-cxx${std}-debug-unit.xml || std_failed=1
+              ctest --test-dir build/${{ matrix.preset }}-cxx${std} --build-config Debug \
+                --label-regex example --verbose --no-compress-output \
+                --output-junit test-results-${{ matrix.compiler }}-cxx${std}-debug-example.xml || std_failed=1
+              echo "::endgroup::"
+            fi
+
+            if [ $std_failed -eq 0 ]; then
+              echo "::group::Build Release C++${std}"
+              cmake --build build/${{ matrix.preset }}-cxx${std} --config Release -- -k 0 || std_failed=1
+              echo "::endgroup::"
+            fi
+
+            if [ $std_failed -eq 0 ]; then
+              echo "::group::Test Release C++${std}"
+              ctest --test-dir build/${{ matrix.preset }}-cxx${std} --build-config Release \
+                --label-regex header --output-on-failure --no-compress-output \
+                --output-junit test-results-${{ matrix.compiler }}-cxx${std}-release-header.xml || std_failed=1
+              ctest --test-dir build/${{ matrix.preset }}-cxx${std} --build-config Release \
+                --label-regex unit --output-on-failure --no-compress-output \
+                --output-junit test-results-${{ matrix.compiler }}-cxx${std}-release-unit.xml || std_failed=1
+              ctest --test-dir build/${{ matrix.preset }}-cxx${std} --build-config Release \
+                --label-regex example --verbose --no-compress-output \
+                --output-junit test-results-${{ matrix.compiler }}-cxx${std}-release-example.xml || std_failed=1
+              echo "::endgroup::"
+            fi
+
+            [ $std_failed -ne 0 ] && overall_failed=1
+          done
+          exit $overall_failed
+
+      - name: Upload test results
+        id: upload_test_results
+        continue-on-error: true
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: test-results-${{ matrix.compiler }}
+          path: build/${{ matrix.preset }}-cxx*/test-results-*.xml
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # -----------------------------------------------------------------------
+      # FetchContent variant - simulates embedding via FetchContent_MakeAvailable
+      # (main only)
+      # -----------------------------------------------------------------------
+      - name: Copy Preset (FetchContent)
+        id: fc_copy_preset
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+        run: |
+          cp ./CMakePresets.json test/cmake-fetch_content
+          cp ./example/basic.cpp test/cmake-fetch_content/main.cpp
+
+      - name: Test Consumer (FetchContent) - Configure
+        id: fc_configure
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+          && steps.fc_copy_preset.outcome == 'success'
+        shell: bash
+        working-directory: test/cmake-fetch_content
+        run: |
+          compiler_args=()
+          if [ -n "${{ matrix.cc }}" ]; then
+            compiler_args+=(-DCMAKE_C_COMPILER=${{ matrix.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }})
+          fi
+
+          for s in ${{ matrix.cxxstds }}; do latest_std=$s; done
+          cmake --preset ${{ matrix.preset }} -B build-consumer-fetch_content \
+            "${compiler_args[@]}" \
+            -DEGGS_STACKTRACE_SOURCE_DIR="${{ github.workspace }}" \
+            -DCMAKE_CXX_STANDARD=${latest_std}
+
+      - name: Test Consumer (FetchContent) - Build (Debug)
+        id: fc_build_debug
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+          && steps.fc_configure.outcome == 'success'
+        working-directory: test/cmake-fetch_content
+        run: cmake --build build-consumer-fetch_content --config Debug
+
+      - name: Test Consumer (FetchContent) - Test (Debug)
+        id: fc_test_debug
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+          && steps.fc_configure.outcome == 'success'
+        working-directory: test/cmake-fetch_content
+        run: ctest --test-dir build-consumer-fetch_content --build-config Debug -V
+
+      - name: Test Consumer (FetchContent) - Build (Release)
+        id: fc_build_release
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+          && steps.fc_configure.outcome == 'success'
+        working-directory: test/cmake-fetch_content
+        run: cmake --build build-consumer-fetch_content --config Release
+
+      - name: Test Consumer (FetchContent) - Test (Release)
+        id: fc_test_release
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+          && steps.fc_configure.outcome == 'success'
+        working-directory: test/cmake-fetch_content
+        run: ctest --test-dir build-consumer-fetch_content --build-config Release -V
+
+      # -----------------------------------------------------------------------
+      # Install variant - simulates a real end-user find_package workflow
+      # (main only)
+      # -----------------------------------------------------------------------
+      - name: Test Install (Debug)
+        id: install_debug
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          for s in ${{ matrix.cxxstds }}; do latest_std=$s; done
+          cmake --install build/${{ matrix.preset }}-cxx${latest_std} \
+            --prefix "${{ runner.temp }}/eggs-stacktrace-install" --config Debug
+
+      - name: Test Install (Release)
+        id: install_release
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          for s in ${{ matrix.cxxstds }}; do latest_std=$s; done
+          cmake --install build/${{ matrix.preset }}-cxx${latest_std} \
+            --prefix "${{ runner.temp }}/eggs-stacktrace-install" --config Release
+
+      - name: Upload installed package
+        id: upload_installed_package
+        continue-on-error: true
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+          && steps.install_debug.outcome == 'success'
+          && steps.install_release.outcome == 'success'
+        uses: actions/upload-artifact@v6
+        with:
+          name: installed-package-${{ matrix.compiler }}
+          path: ${{ runner.temp }}/eggs-stacktrace-install
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Clean Source and Build Tree
+        id: clean_source_build_tree
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+        run: cmake -E rm -rf ./include ./src ./build
+
+      - name: Copy main.cpp (find_package)
+        id: fp_copy_main
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+          && steps.clean_source_build_tree.outcome == 'success'
+        run: cp ./example/basic.cpp test/cmake-find_package/main.cpp
+
+      - name: Install CMake (find_package minimum)
+        id: fp_install_cmake_min
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+          && steps.install_debug.outcome == 'success'
+          && steps.install_release.outcome == 'success'
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "3.21.0"
+
+      - name: Test Consumer (find_package) - Configure
+        id: fp_configure
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+          && steps.install_debug.outcome == 'success'
+          && steps.install_release.outcome == 'success'
+          && steps.fp_copy_main.outcome == 'success'
+          && steps.fp_install_cmake_min.outcome == 'success'
+        shell: bash
+        working-directory: test/cmake-find_package
+        env:
+          CXX: ${{ startsWith(matrix.compiler, 'clang-cl') && 'clang-cl' || startsWith(matrix.compiler, 'msvc') && 'cl' || matrix.cxx != '' && matrix.cxx || 'clang++' }}
+          CXXFLAGS: ${{ contains(matrix.compiler, 'libcxx') && '-stdlib=libc++' || '' }}
+          LDFLAGS: ${{ contains(matrix.compiler, 'libcxx') && '-stdlib=libc++' || '' }}
+          CMAKE_PREFIX_PATH: ${{ runner.temp }}/eggs-stacktrace-install
+        run: |
+          cmake -S . -B build-consumer-find_package \
+            -G "Ninja Multi-Config" \
+            -DCMAKE_CXX_STANDARD=14 --debug-find
+
+      - name: Test Consumer (find_package) - Build (Debug)
+        id: fp_build_debug
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+          && steps.fp_configure.outcome == 'success'
+        working-directory: test/cmake-find_package
+        run: cmake --build build-consumer-find_package --config Debug
+
+      - name: Test Consumer (find_package) - Test (Debug)
+        id: fp_test_debug
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+          && steps.fp_configure.outcome == 'success'
+        working-directory: test/cmake-find_package
+        run: ctest --test-dir build-consumer-find_package --build-config Debug -V
+
+      - name: Test Consumer (find_package) - Build (Release)
+        id: fp_build_release
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+          && steps.fp_configure.outcome == 'success'
+        working-directory: test/cmake-find_package
+        run: cmake --build build-consumer-find_package --config Release
+
+      - name: Test Consumer (find_package) - Test (Release)
+        id: fp_test_release
+        if: >-
+          always()
+          && github.ref == 'refs/heads/main'
+          && steps.fp_configure.outcome == 'success'
+        working-directory: test/cmake-find_package
+        run: ctest --test-dir build-consumer-find_package --build-config Release -V
+
+      - name: Check all step outcomes
+        if: always()
+        shell: bash
+        run: |
+          failed=$(echo '${{ toJSON(steps) }}' | jq -r '[to_entries[] | select(.value.outcome == "failure") | .key] | join(", ")')
+          if [ -n "$failed" ]; then
+            echo "::error::Failed steps: $failed"
+          fi

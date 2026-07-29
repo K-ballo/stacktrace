@@ -1,0 +1,190 @@
+# Eggs.Stacktrace
+#
+# Copyright (c) 2026 Agustin Berge
+#
+
+name: coverage
+
+on:
+  push:
+    branches: [ main, feature/** ]
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+jobs:
+  coverage:
+    name: ubuntu-24.04 / llvm-cov
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "4.4.0"
+
+      - name: Set up APT package cache
+        run: |
+          mkdir -p ~/.cache/apt/archives/partial
+          echo "Dir::Cache::archives \"$HOME/.cache/apt/archives\";" \
+            | sudo tee /etc/apt/apt.conf.d/99user-cache
+
+      - name: Cache APT packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/apt/archives
+          key: apt-ubuntu-24.04-clang-22-${{ hashFiles('.github/workflows/coverage.yml') }}
+          restore-keys: apt-ubuntu-24.04-clang-22-
+
+      - name: Install Clang 22
+        run: |
+          wget -q https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh 22 all
+          sudo update-alternatives --install /usr/bin/clang   clang   /usr/bin/clang-22   200
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-22 200
+
+      - name: Fix APT cache permissions
+        if: always()
+        run: sudo rm -rf ~/.cache/apt/archives/lock ~/.cache/apt/archives/partial
+
+      - name: Configure (coverage)
+        run: |
+          cmake --preset dev-clang -B build/coverage \
+            -DCMAKE_CXX_FLAGS="-fprofile-instr-generate -fcoverage-mapping" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fprofile-instr-generate"
+
+      - name: Build
+        run: cmake --build build/coverage --config Debug
+
+      - name: Test
+        run: |
+          LLVM_PROFILE_FILE="${GITHUB_WORKSPACE}/build/coverage/cov-%p.profraw" \
+            ctest --test-dir build/coverage --build-config Debug \
+                  --output-on-failure --no-compress-output
+
+      - name: Merge profile data
+        run: |
+          llvm-profdata-22 merge -sparse build/coverage/cov-*.profraw \
+            -o build/coverage/coverage.profdata
+
+      - name: Coverage report
+        run: |
+          mapfile -t objects < <(find build/coverage -path "*/Debug/*" -type f -perm /111)
+          first="${objects[0]}"
+          obj_args=()
+          for o in "${objects[@]:1}"; do obj_args+=("-object=$o"); done
+          llvm-cov-22 report "$first" "${obj_args[@]}" \
+            -instr-profile=build/coverage/coverage.profdata \
+            -use-color=false src include/eggs 2>/dev/null
+
+      - name: Generate HTML report
+        run: |
+          mapfile -t objects < <(find build/coverage -path "*/Debug/*" -type f -perm /111)
+          first="${objects[0]}"
+          obj_args=()
+          for o in "${objects[@]:1}"; do obj_args+=("-object=$o"); done
+          llvm-cov-22 show "$first" "${obj_args[@]}" \
+            -instr-profile=build/coverage/coverage.profdata \
+            -format=html \
+            -output-dir=build/coverage/html \
+            -show-line-counts-or-regions \
+            src include/eggs 2>/dev/null
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-report-llvm-cov
+          path: build/coverage/html/
+          retention-days: 7
+
+  coverage-gcov:
+    name: ubuntu-24.04 / gcov
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "4.4.0"
+
+      - name: Set up APT package cache
+        run: |
+          mkdir -p ~/.cache/apt/archives/partial
+          echo "Dir::Cache::archives \"$HOME/.cache/apt/archives\";" \
+            | sudo tee /etc/apt/apt.conf.d/99user-cache
+
+      - name: Cache APT packages
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/apt/archives
+          key: apt-ubuntu-24.04-gcc-16-${{ hashFiles('.github/workflows/coverage.yml') }}
+          restore-keys: apt-ubuntu-24.04-gcc-16-
+
+      - name: Install GCC 16
+        run: |
+          sudo add-apt-repository ppa:ubuntu-toolchain-r/test -y
+          sudo apt-get update -q
+          sudo apt-get install -y gcc-16 g++-16
+          sudo update-alternatives --install /usr/bin/gcc gcc /usr/bin/gcc-16 100 \
+                                   --slave /usr/bin/g++ g++ /usr/bin/g++-16
+
+      - name: Install lcov
+        run: |
+          sudo apt-get install -y libcapture-tiny-perl libdatetime-perl libtimedate-perl
+          curl -sL https://github.com/linux-test-project/lcov/releases/download/v2.4/lcov-2.4.tar.gz \
+            | tar xz -C "$HOME"
+          echo "$HOME/lcov-2.4/bin" >> "$GITHUB_PATH"
+
+      - name: Fix APT cache permissions
+        if: always()
+        run: sudo rm -rf ~/.cache/apt/archives/lock ~/.cache/apt/archives/partial
+
+      - name: Configure (coverage)
+        run: |
+          cmake --preset dev-gcc -B build/coverage-gcc \
+            -DCMAKE_CXX_FLAGS="--coverage" \
+            -DCMAKE_EXE_LINKER_FLAGS="--coverage"
+
+      - name: Build
+        run: cmake --build build/coverage-gcc --config Debug
+
+      - name: Test
+        run: |
+          find build/coverage-gcc -name "*.gcda" -delete
+          ctest --test-dir build/coverage-gcc --build-config Debug \
+                --output-on-failure --no-compress-output
+
+      - name: Collect coverage
+        run: |
+          lcov --capture \
+               --gcov-tool gcov-16 \
+               --ignore-errors mismatch,inconsistent \
+               --directory build/coverage-gcc \
+               --output-file build/coverage-gcc/coverage.info
+          lcov --extract build/coverage-gcc/coverage.info \
+               '*/src/*' '*/include/eggs/*' \
+               --ignore-errors unused \
+               --output-file build/coverage-gcc/coverage.info
+
+      - name: Coverage report
+        run: |
+          lcov --list build/coverage-gcc/coverage.info
+
+      - name: Generate HTML report
+        run: |
+          genhtml build/coverage-gcc/coverage.info \
+            --output-directory build/coverage-gcc/html \
+            --quiet
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-report-gcov
+          path: build/coverage-gcc/html/
+          retention-days: 7

@@ -1,0 +1,127 @@
+# Eggs.Stacktrace
+#
+# Copyright (c) 2026 Agustin Berge
+#
+# Distributed under the Boost Software License, Version 1.0.
+# See accompanying file LICENSE.txt or copy at
+# http://www.boost.org/LICENSE_1_0.txt
+
+name: lint
+
+on:
+  push:
+    branches: [ main, feature/** ]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  orphan-sources:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "4.4.0"
+
+      - name: Enable CMake File API (codemodel-v2)
+        run: |
+          mkdir -p build/lint/.cmake/api/v1/query
+          touch build/lint/.cmake/api/v1/query/codemodel-v2
+
+      - name: Configure
+        run: cmake -S . -B build/lint
+
+      - name: Check every header/source file is referenced by a CMake target
+        run: python3 .github/scripts/lint/check_orphan_sources.py build/lint
+
+  warn-everything:
+    name: -Weverything (clang-22)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 6
+
+    env:
+      EGGS_STACKTRACE_SOURCE_DIR: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "4.4.0"
+
+      - name: Set up APT package cache
+        run: |
+          mkdir -p ~/.cache/apt/archives/partial
+          echo "Dir::Cache::archives \"$HOME/.cache/apt/archives\";" \
+            | sudo tee /etc/apt/apt.conf.d/99user-cache
+
+      - name: Cache APT packages
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/apt/archives
+          key: apt-ubuntu-24.04-clang-22-${{ hashFiles('.github/workflows/lint.yml') }}
+          restore-keys: apt-ubuntu-24.04-clang-22-
+
+      - name: Install Clang 22
+        run: |
+          wget -q https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh 22
+          sudo update-alternatives --install /usr/bin/clang   clang   /usr/bin/clang-22   200
+          sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-22 200
+
+      - name: Fix APT cache permissions
+        if: always()
+        run: sudo rm -rf ~/.cache/apt/archives/lock ~/.cache/apt/archives/partial
+
+      - name: Configure
+        run: cmake --preset dev-clang -B build/warn-everything
+               -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF
+               -DCMAKE_CXX_COMPILER_LAUNCHER="python3;${{ github.workspace }}/.github/scripts/lint/warn-everything-launcher.py"
+               -DCMAKE_CXX_FLAGS_INIT="-Weverything
+                 -Wno-c++98-compat -Wno-c++98-compat-pedantic
+                 -Wno-c++11-compat
+                 -Wno-c++14-compat
+                 -Wno-pre-c++14-compat -Wno-pre-c++14-compat-pedantic
+                 -Wno-c++17-compat -Wno-c++17-compat-mangling
+                 -Wno-pre-c++17-compat -Wno-pre-c++17-compat-pedantic
+                 -Wno-c++20-compat
+                 -Wno-pre-c++20-compat -Wno-pre-c++20-compat-pedantic
+                 -Wno-pre-c++23-compat -Wno-pre-c++23-compat-pedantic"
+
+      - name: Build (Debug)
+        run: cmake --build build/warn-everything --config Debug -- -k 0
+
+      - name: Merge SARIF fragments
+        run: python3 .github/scripts/lint/warn-everything-merge-sarif.py
+               build/warn-everything build/warn-everything/warn-everything.sarif
+
+      - name: Upload SARIF
+        uses: actions/upload-artifact@v6
+        with:
+          name: warn-everything.sarif
+          path: build/warn-everything/warn-everything.sarif
+          retention-days: 7
+
+      - name: Determine diff base
+        id: diff-base
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            if git rev-parse --verify -q HEAD^ > /dev/null; then
+              echo "ref=HEAD^" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            git fetch origin main
+            echo "ref=origin/main" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check warnings on changed lines
+        if: steps.diff-base.outputs.ref != ''
+        run: python3 .github/scripts/lint/warn-everything-check-changed.py
+               build/warn-everything/warn-everything.sarif ${{ steps.diff-base.outputs.ref }}

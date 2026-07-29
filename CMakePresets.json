@@ -1,0 +1,260 @@
+{
+  "version": 12,
+  "cmakeMinimumRequired": {
+    "major": 4,
+    "minor": 4,
+    "patch": 0
+  },
+  "configurePresets": [
+    {
+      "name": "base",
+      "hidden": true,
+      "generator": "Ninja Multi-Config",
+      "binaryDir": "${sourceDir}/build/${presetName}",
+      "warnings": {
+        "author": true,
+        "deprecated": true,
+        "uninitialized": true,
+        "unusedCli": true
+      },
+      "errors": {
+        "author": true,
+        "deprecated": true,
+        "uninitialized": true
+      },
+      "cacheVariables": {
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "CMAKE_CXX_STANDARD": "23",
+        "CMAKE_CXX_STANDARD_REQUIRED": "ON",
+        "CMAKE_CXX_EXTENSIONS": "OFF",
+        "CMAKE_COMPILE_WARNING_AS_ERROR": "ON",
+        "CMAKE_LINK_WARNING_AS_ERROR": "ON",
+        "BUILD_EXAMPLES": "ON",
+        "BUILD_TESTING": "ON",
+        "ENABLE_INSTALL": "ON"
+      }
+    },
+    {
+      "name": "dev-gcc",
+      "displayName": "GCC",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "g++"
+      },
+      "environment": {
+        "CFLAGS": "-Wall -Wextra -Wpedantic -ffile-prefix-map=\"${sourceDir}\"=.",
+        "CXXFLAGS": "-Wall -Wextra -Wpedantic -ffile-prefix-map=\"${sourceDir}\"=."
+      }
+    },
+    {
+      "name": "dev-clang",
+      "displayName": "Clang",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++"
+      },
+      "environment": {
+        "CFLAGS": "-Wall -Wextra -Wpedantic -ffile-prefix-map=\"${sourceDir}\"=. -ffile-compilation-dir=.",
+        "CXXFLAGS": "-Wall -Wextra -Wpedantic -ffile-prefix-map=\"${sourceDir}\"=. -ffile-compilation-dir=."
+      }
+    },
+    {
+      "name": "dev-clang-libcxx",
+      "displayName": "Clang + libc++",
+      "inherits": "dev-clang",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang++"
+      },
+      "environment": {
+        "CFLAGS": "-Wall -Wextra -Wpedantic -ffile-prefix-map=\"${sourceDir}\"=. -ffile-compilation-dir=.",
+        "CXXFLAGS": "-Wall -Wextra -Wpedantic -stdlib=libc++ -ffile-prefix-map=\"${sourceDir}\"=. -ffile-compilation-dir=.",
+        "LDFLAGS": "-stdlib=libc++"
+      }
+    },
+    {
+      "name": "dev-msvc",
+      "displayName": "MSVC x64",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "cl",
+        "CMAKE_CXX_FLAGS_RELEASE_INIT": "/wd4702",
+        "CMAKE_CXX_FLAGS_RELWITHDEBINFO_INIT": "/wd4702"
+      },
+      "environment": {
+        "CFLAGS": "/W4 /d1trimfile:\"${sourceDir}\"",
+        "CXXFLAGS": "/W4 /d1trimfile:\"${sourceDir}\""
+      }
+    },
+    {
+      "name": "dev-clang-cl",
+      "displayName": "Clang-CL x64",
+      "inherits": "base",
+      "cacheVariables": {
+        "CMAKE_CXX_COMPILER": "clang-cl"
+      },
+      "environment": {
+        "CFLAGS": "/W4 /clang:-ffile-prefix-map=${sourceDir}=.",
+        "CXXFLAGS": "/W4 /clang:-ffile-prefix-map=${sourceDir}=."
+      }
+    },
+    {
+      "name": "asan",
+      "displayName": "ASan + UBSan / Clang",
+      "inherits": "dev-clang",
+      "environment": {
+        "CXXFLAGS": "-Wall -Wextra -Wpedantic -fsanitize=address,undefined -fno-omit-frame-pointer",
+        "LDFLAGS": "-fsanitize=address,undefined"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "dev-gcc-debug",
+      "displayName": "GCC (Debug)",
+      "configurePreset": "dev-gcc",
+      "configuration": "Debug"
+    },
+    {
+      "name": "dev-gcc-release",
+      "displayName": "GCC (Release)",
+      "configurePreset": "dev-gcc",
+      "configuration": "Release"
+    },
+    {
+      "name": "dev-clang-debug",
+      "displayName": "Clang (Debug)",
+      "configurePreset": "dev-clang",
+      "configuration": "Debug"
+    },
+    {
+      "name": "dev-clang-release",
+      "displayName": "Clang (Release)",
+      "configurePreset": "dev-clang",
+      "configuration": "Release"
+    },
+    {
+      "name": "dev-clang-libcxx-debug",
+      "displayName": "Clang + libc++ (Debug)",
+      "configurePreset": "dev-clang-libcxx",
+      "configuration": "Debug"
+    },
+    {
+      "name": "dev-clang-libcxx-release",
+      "displayName": "Clang + libc++ (Release)",
+      "configurePreset": "dev-clang-libcxx",
+      "configuration": "Release"
+    },
+    {
+      "name": "dev-msvc-debug",
+      "displayName": "MSVC x64 (Debug)",
+      "configurePreset": "dev-msvc",
+      "configuration": "Debug"
+    },
+    {
+      "name": "dev-msvc-release",
+      "displayName": "MSVC x64 (Release)",
+      "configurePreset": "dev-msvc",
+      "configuration": "Release"
+    },
+    {
+      "name": "asan",
+      "configurePreset": "asan",
+      "configuration": "Debug"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "base-test",
+      "hidden": true,
+      "configuration": "Debug",
+      "output": {
+        "outputOnFailure": true,
+        "verbosity": "default"
+      },
+      "execution": {
+        "noTestsAction": "error",
+        "stopOnFailure": false
+      }
+    },
+    {
+      "name": "dev-gcc-debug",
+      "displayName": "GCC (Debug)",
+      "inherits": "base-test",
+      "configurePreset": "dev-gcc",
+      "configuration": "Debug"
+    },
+    {
+      "name": "dev-gcc-release",
+      "displayName": "GCC (Release)",
+      "inherits": "base-test",
+      "configurePreset": "dev-gcc",
+      "configuration": "Release"
+    },
+    {
+      "name": "dev-clang-debug",
+      "displayName": "Clang (Debug)",
+      "inherits": "base-test",
+      "configurePreset": "dev-clang",
+      "configuration": "Debug"
+    },
+    {
+      "name": "dev-clang-release",
+      "displayName": "Clang (Release)",
+      "inherits": "base-test",
+      "configurePreset": "dev-clang",
+      "configuration": "Release"
+    },
+    {
+      "name": "dev-clang-libcxx-debug",
+      "displayName": "Clang + libc++ (Debug)",
+      "inherits": "base-test",
+      "configurePreset": "dev-clang-libcxx",
+      "configuration": "Debug"
+    },
+    {
+      "name": "dev-clang-libcxx-release",
+      "displayName": "Clang + libc++ (Release)",
+      "inherits": "base-test",
+      "configurePreset": "dev-clang-libcxx",
+      "configuration": "Release"
+    },
+    {
+      "name": "dev-msvc-debug",
+      "displayName": "MSVC x64 (Debug)",
+      "inherits": "base-test",
+      "configurePreset": "dev-msvc",
+      "configuration": "Debug"
+    },
+    {
+      "name": "dev-msvc-release",
+      "displayName": "MSVC x64 (Release)",
+      "inherits": "base-test",
+      "configurePreset": "dev-msvc",
+      "configuration": "Release"
+    },
+    {
+      "name": "dev-clang-cl-debug",
+      "displayName": "Clang-CL x64 (Debug)",
+      "inherits": "base-test",
+      "configurePreset": "dev-clang-cl",
+      "configuration": "Debug"
+    },
+    {
+      "name": "dev-clang-cl-release",
+      "displayName": "Clang-CL x64 (Release)",
+      "inherits": "base-test",
+      "configurePreset": "dev-clang-cl",
+      "configuration": "Release"
+    },
+    {
+      "name": "asan",
+      "displayName": "Test (ASan + UBSan / Clang)",
+      "inherits": "base-test",
+      "configurePreset": "asan",
+      "environment": {
+        "ASAN_OPTIONS": "strict_string_checks=1:detect_stack_use_after_return=1",
+        "UBSAN_OPTIONS": "print_stacktrace=1:halt_on_error=1"
+      }
+    }
+  ]
+}

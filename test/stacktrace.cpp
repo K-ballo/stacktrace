@@ -16,32 +16,32 @@
 #include <stdexcept>
 #include <utility>
 
-#include "detail/assert.hpp"
+#include "support.hpp"
 
 int main()
 {
     // -- current() returns empty stacktrace with null backend ------------------
 
     auto st = eggs::stacktrace::current();
-    EGGS_TEST_ASSERT(st.empty());
-    EGGS_TEST_ASSERT(st.size() == 0u);
-    EGGS_TEST_ASSERT(st.begin() == st.end());
-    EGGS_TEST_ASSERT(st.cbegin() == st.cend());
-    EGGS_TEST_ASSERT(st.rbegin() == st.rend());
-    EGGS_TEST_ASSERT(st.crbegin() == st.crend());
-    EGGS_TEST_ASSERT(st.crbegin() == st.rbegin());
+    EGGS_STACKTRACE_CHECK(st.empty());
+    EGGS_STACKTRACE_CHECK(st.size() == 0u);
+    EGGS_STACKTRACE_CHECK(st.begin() == st.end());
+    EGGS_STACKTRACE_CHECK(st.cbegin() == st.cend());
+    EGGS_STACKTRACE_CHECK(st.rbegin() == st.rend());
+    EGGS_STACKTRACE_CHECK(st.crbegin() == st.crend());
+    EGGS_STACKTRACE_CHECK(st.crbegin() == st.rbegin());
 
     // -- Two-parameter overload ------------------------------------------------
 
     auto st2 = eggs::stacktrace::current(0, 10);
-    EGGS_TEST_ASSERT(st2.empty());
+    EGGS_STACKTRACE_CHECK(st2.empty());
 
     auto st3 = eggs::stacktrace::current(5);
-    EGGS_TEST_ASSERT(st3.empty());
+    EGGS_STACKTRACE_CHECK(st3.empty());
 
     // -- max_size --------------------------------------------------------------
 
-    EGGS_TEST_ASSERT(st.max_size() > 0u);
+    EGGS_STACKTRACE_CHECK(st.max_size() > 0u);
 
     // -- Element access --------------------------------------------------------
 
@@ -51,64 +51,64 @@ int main()
     } catch (std::out_of_range const&) {
         threw = true;
     }
-    EGGS_TEST_ASSERT(threw);
+    EGGS_STACKTRACE_CHECK(threw);
 
     // -- Copy / move construction ------------------------------------------------
 
     eggs::stacktrace copied(st);
-    EGGS_TEST_ASSERT(copied.empty());
-    EGGS_TEST_ASSERT(copied == st);
+    EGGS_STACKTRACE_CHECK(copied.empty());
+    EGGS_STACKTRACE_CHECK(copied == st);
 
     eggs::stacktrace moved(std::move(copied));
-    EGGS_TEST_ASSERT(moved.empty());
-    EGGS_TEST_ASSERT(moved == st);
+    EGGS_STACKTRACE_CHECK(moved.empty());
+    EGGS_STACKTRACE_CHECK(moved == st);
 
     eggs::stacktrace copy_assigned;
     copy_assigned = st;
-    EGGS_TEST_ASSERT(copy_assigned == st);
+    EGGS_STACKTRACE_CHECK(copy_assigned == st);
 
     eggs::stacktrace move_assigned;
     move_assigned = std::move(copy_assigned);
-    EGGS_TEST_ASSERT(move_assigned == st);
+    EGGS_STACKTRACE_CHECK(move_assigned == st);
 
     // -- swap ------------------------------------------------------------------
 
     eggs::stacktrace a, b;
     a.swap(b);
-    EGGS_TEST_ASSERT(a.empty() && b.empty());
+    EGGS_STACKTRACE_CHECK(a.empty() && b.empty());
 
     swap(a, b);
-    EGGS_TEST_ASSERT(a.empty() && b.empty());
+    EGGS_STACKTRACE_CHECK(a.empty() && b.empty());
 
     // -- operator== -----------------------------------------------------------
 
-    EGGS_TEST_ASSERT(a == b);
-    EGGS_TEST_ASSERT(!(a != b));
+    EGGS_STACKTRACE_CHECK(a == b);
+    EGGS_STACKTRACE_CHECK(!(a != b));
 
     // -- Ordering ----------------------------------------------------------------
 
 #if __cplusplus >= 202002L
-    EGGS_TEST_ASSERT((a <=> b) == std::strong_ordering::equal);
+    EGGS_STACKTRACE_CHECK((a <=> b) == std::strong_ordering::equal);
 #endif
-    EGGS_TEST_ASSERT(!(a < b));
-    EGGS_TEST_ASSERT(!(a > b));
-    EGGS_TEST_ASSERT(a <= b);
-    EGGS_TEST_ASSERT(a >= b);
+    EGGS_STACKTRACE_CHECK(!(a < b));
+    EGGS_STACKTRACE_CHECK(!(a > b));
+    EGGS_STACKTRACE_CHECK(a <= b);
+    EGGS_STACKTRACE_CHECK(a >= b);
 
     // -- to_string -------------------------------------------------------------
 
-    EGGS_TEST_ASSERT(eggs::to_string(st) == "");
+    EGGS_STACKTRACE_CHECK(eggs::to_string(st) == "");
 
     // -- operator<< -----------------------------------------------------------
 
     std::ostringstream oss;
     oss << st;
-    EGGS_TEST_ASSERT(oss.str() == "");
+    EGGS_STACKTRACE_CHECK(oss.str() == "");
 
     // -- Hash --------------------------------------------------------------------
 
     std::hash<eggs::stacktrace> h;
-    EGGS_TEST_ASSERT(h(st) == h(a));
+    EGGS_STACKTRACE_CHECK(h(st) == h(a));
 
-    return 0;
+    return eggs::test_support::report();
 }

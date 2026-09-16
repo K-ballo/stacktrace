@@ -48,7 +48,7 @@ function(add_lib_test name)
             FILE_SET private_headers
                 TYPE HEADERS
                 BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
-                FILES detail/assert.hpp
+                FILES support.hpp
     )
     target_link_libraries(
         eggs.stacktrace.test.${name}

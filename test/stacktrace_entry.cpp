@@ -8,7 +8,7 @@
 
 #include <eggs/stacktrace.hpp>
 
-#include "detail/assert.hpp"
+#include "support.hpp"
 #if __cplusplus >= 202002L
 #    include <compare>
 #endif
@@ -21,39 +21,39 @@ int main()
 
     eggs::stacktrace_entry e;
 
-    EGGS_TEST_ASSERT(e.native_handle() == nullptr);
-    EGGS_TEST_ASSERT(!e);
-    EGGS_TEST_ASSERT(e.description() == "");
-    EGGS_TEST_ASSERT(e.source_file() == "");
-    EGGS_TEST_ASSERT(e.source_line() == 0u);
+    EGGS_STACKTRACE_CHECK(e.native_handle() == nullptr);
+    EGGS_STACKTRACE_CHECK(!e);
+    EGGS_STACKTRACE_CHECK(e.description() == "");
+    EGGS_STACKTRACE_CHECK(e.source_file() == "");
+    EGGS_STACKTRACE_CHECK(e.source_line() == 0u);
 
     // -- Equality --------------------------------------------------------------
 
     eggs::stacktrace_entry e2;
 
-    EGGS_TEST_ASSERT(e == e2);
-    EGGS_TEST_ASSERT(!(e != e2));
+    EGGS_STACKTRACE_CHECK(e == e2);
+    EGGS_STACKTRACE_CHECK(!(e != e2));
 
     // -- Ordering --------------------------------------------------------------
 
 #if __cplusplus >= 202002L
-    EGGS_TEST_ASSERT((e <=> e2) == std::strong_ordering::equal);
+    EGGS_STACKTRACE_CHECK((e <=> e2) == std::strong_ordering::equal);
 #endif
-    EGGS_TEST_ASSERT(!(e < e2));
-    EGGS_TEST_ASSERT(!(e > e2));
-    EGGS_TEST_ASSERT(e <= e2);
-    EGGS_TEST_ASSERT(e >= e2);
+    EGGS_STACKTRACE_CHECK(!(e < e2));
+    EGGS_STACKTRACE_CHECK(!(e > e2));
+    EGGS_STACKTRACE_CHECK(e <= e2);
+    EGGS_STACKTRACE_CHECK(e >= e2);
 
     // -- Hash ------------------------------------------------------------------
 
     std::hash<eggs::stacktrace_entry> h;
-    EGGS_TEST_ASSERT(h(e) == h(e2));
+    EGGS_STACKTRACE_CHECK(h(e) == h(e2));
 
     // -- operator<< --------------------------------------------------------
 
     std::ostringstream oss;
     oss << e;
-    EGGS_TEST_ASSERT(oss.str() == "");
+    EGGS_STACKTRACE_CHECK(oss.str() == "");
 
-    return 0;
+    return eggs::test_support::report();
 }

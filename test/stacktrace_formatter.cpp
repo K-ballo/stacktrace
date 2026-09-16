@@ -16,19 +16,19 @@
 
 #    include <format>
 
-#    include "detail/assert.hpp"
+#    include "support.hpp"
 
 int main()
 {
     // Default-constructed (null) entry formats to empty string.
     eggs::stacktrace_entry e;
-    EGGS_TEST_ASSERT(std::format("{}", e) == "");
+    EGGS_STACKTRACE_CHECK(std::format("{}", e) == "");
 
     // Empty stacktrace formats to empty string.
     eggs::stacktrace st;
-    EGGS_TEST_ASSERT(std::format("{}", st) == "");
+    EGGS_STACKTRACE_CHECK(std::format("{}", st) == "");
 
-    return 0;
+    return eggs::test_support::report();
 }
 
 #else

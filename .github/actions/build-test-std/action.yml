@@ -1,0 +1,92 @@
+# Eggs.Stacktrace
+#
+# Copyright (c) 2026 Agustin Berge
+#
+# Distributed under the Boost Software License, Version 1.0.
+# See accompanying file LICENSE.txt or copy at
+# http://www.boost.org/LICENSE_1_0.txt
+
+name: Build and test (single C++ standard)
+description: Configure, build, and test the project (Debug and Release) for one C++ standard.
+
+inputs:
+  std:
+    description: C++ standard to build for (e.g. 17)
+    required: true
+  preset:
+    description: CMake preset name
+    required: true
+  compiler:
+    description: Compiler identifier, used to name test result artifacts
+    required: true
+  cc:
+    description: C compiler executable
+    required: false
+    default: ""
+  cxx:
+    description: C++ compiler executable
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        std="${{ inputs.std }}"
+        build_dir="build/${{ inputs.preset }}-cxx${std}"
+        failed=0
+
+        compiler_args=()
+        if [ -n "${{ inputs.cc }}" ]; then
+          compiler_args+=(-DCMAKE_C_COMPILER=${{ inputs.cc }} -DCMAKE_CXX_COMPILER=${{ inputs.cxx }})
+        fi
+
+        echo "::group::Configure C++${std}"
+        cmake --preset ${{ inputs.preset }} -B "${build_dir}" \
+          "${compiler_args[@]}" \
+          -DBUILD_EXAMPLES=ON -DBUILD_TESTING=ON \
+          -DCMAKE_CXX_STANDARD=${std} || failed=1
+        echo "::endgroup::"
+
+        if [ $failed -eq 0 ]; then
+          echo "::group::Build Debug C++${std}"
+          cmake --build "${build_dir}" --config Debug -- -k 0 || failed=1
+          echo "::endgroup::"
+        fi
+
+        if [ $failed -eq 0 ]; then
+          echo "::group::Test Debug C++${std}"
+          ctest --test-dir "${build_dir}" --build-config Debug \
+            --label-regex header --output-on-failure --no-compress-output \
+            --output-junit "test-results-${{ inputs.compiler }}-cxx${std}-debug-header.xml" || failed=1
+          ctest --test-dir "${build_dir}" --build-config Debug \
+            --label-regex unit --output-on-failure --no-compress-output \
+            --output-junit "test-results-${{ inputs.compiler }}-cxx${std}-debug-unit.xml" || failed=1
+          ctest --test-dir "${build_dir}" --build-config Debug \
+            --label-regex example --verbose --no-compress-output \
+            --output-junit "test-results-${{ inputs.compiler }}-cxx${std}-debug-example.xml" || failed=1
+          echo "::endgroup::"
+        fi
+
+        if [ $failed -eq 0 ]; then
+          echo "::group::Build Release C++${std}"
+          cmake --build "${build_dir}" --config Release -- -k 0 || failed=1
+          echo "::endgroup::"
+        fi
+
+        if [ $failed -eq 0 ]; then
+          echo "::group::Test Release C++${std}"
+          ctest --test-dir "${build_dir}" --build-config Release \
+            --label-regex header --output-on-failure --no-compress-output \
+            --output-junit "test-results-${{ inputs.compiler }}-cxx${std}-release-header.xml" || failed=1
+          ctest --test-dir "${build_dir}" --build-config Release \
+            --label-regex unit --output-on-failure --no-compress-output \
+            --output-junit "test-results-${{ inputs.compiler }}-cxx${std}-release-unit.xml" || failed=1
+          ctest --test-dir "${build_dir}" --build-config Release \
+            --label-regex example --verbose --no-compress-output \
+            --output-junit "test-results-${{ inputs.compiler }}-cxx${std}-release-example.xml" || failed=1
+          echo "::endgroup::"
+        fi
+
+        exit $failed

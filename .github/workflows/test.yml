@@ -119,69 +119,71 @@ jobs:
       # -----------------------------------------------------------------------
       # Main project
       # -----------------------------------------------------------------------
-      - name: Build and test
-        id: build_and_test
-        shell: bash
-        run: |
-          compiler_args=()
-          if [ -n "${{ matrix.cc }}" ]; then
-            compiler_args+=(-DCMAKE_C_COMPILER=${{ matrix.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }})
-          fi
+      - name: Build and test C++11
+        id: build_test_cxx11
+        if: contains(matrix.cxxstds, '11')
+        uses: ./.github/actions/build-test-std
+        with:
+          std: "11"
+          preset: ${{ matrix.preset }}
+          compiler: ${{ matrix.compiler }}
+          cc: ${{ matrix.cc }}
+          cxx: ${{ matrix.cxx }}
 
-          overall_failed=0
-          for std in ${{ matrix.cxxstds }}; do
-            std_failed=0
+      - name: Build and test C++14
+        id: build_test_cxx14
+        if: always() && contains(matrix.cxxstds, '14')
+        uses: ./.github/actions/build-test-std
+        with:
+          std: "14"
+          preset: ${{ matrix.preset }}
+          compiler: ${{ matrix.compiler }}
+          cc: ${{ matrix.cc }}
+          cxx: ${{ matrix.cxx }}
 
-            echo "::group::Configure C++${std}"
-            cmake --preset ${{ matrix.preset }} -B build/${{ matrix.preset }}-cxx${std} \
-              "${compiler_args[@]}" \
-              -DBUILD_EXAMPLES=ON -DBUILD_TESTING=ON \
-              -DCMAKE_CXX_STANDARD=${std} || std_failed=1
-            echo "::endgroup::"
+      - name: Build and test C++17
+        id: build_test_cxx17
+        if: always() && contains(matrix.cxxstds, '17')
+        uses: ./.github/actions/build-test-std
+        with:
+          std: "17"
+          preset: ${{ matrix.preset }}
+          compiler: ${{ matrix.compiler }}
+          cc: ${{ matrix.cc }}
+          cxx: ${{ matrix.cxx }}
 
-            if [ $std_failed -eq 0 ]; then
-              echo "::group::Build Debug C++${std}"
-              cmake --build build/${{ matrix.preset }}-cxx${std} --config Debug -- -k 0 || std_failed=1
-              echo "::endgroup::"
-            fi
+      - name: Build and test C++20
+        id: build_test_cxx20
+        if: always() && contains(matrix.cxxstds, '20')
+        uses: ./.github/actions/build-test-std
+        with:
+          std: "20"
+          preset: ${{ matrix.preset }}
+          compiler: ${{ matrix.compiler }}
+          cc: ${{ matrix.cc }}
+          cxx: ${{ matrix.cxx }}
 
-            if [ $std_failed -eq 0 ]; then
-              echo "::group::Test Debug C++${std}"
-              ctest --test-dir build/${{ matrix.preset }}-cxx${std} --build-config Debug \
-                --label-regex header --output-on-failure --no-compress-output \
-                --output-junit test-results-${{ matrix.compiler }}-cxx${std}-debug-header.xml || std_failed=1
-              ctest --test-dir build/${{ matrix.preset }}-cxx${std} --build-config Debug \
-                --label-regex unit --output-on-failure --no-compress-output \
-                --output-junit test-results-${{ matrix.compiler }}-cxx${std}-debug-unit.xml || std_failed=1
-              ctest --test-dir build/${{ matrix.preset }}-cxx${std} --build-config Debug \
-                --label-regex example --verbose --no-compress-output \
-                --output-junit test-results-${{ matrix.compiler }}-cxx${std}-debug-example.xml || std_failed=1
-              echo "::endgroup::"
-            fi
+      - name: Build and test C++23
+        id: build_test_cxx23
+        if: always() && contains(matrix.cxxstds, '23')
+        uses: ./.github/actions/build-test-std
+        with:
+          std: "23"
+          preset: ${{ matrix.preset }}
+          compiler: ${{ matrix.compiler }}
+          cc: ${{ matrix.cc }}
+          cxx: ${{ matrix.cxx }}
 
-            if [ $std_failed -eq 0 ]; then
-              echo "::group::Build Release C++${std}"
-              cmake --build build/${{ matrix.preset }}-cxx${std} --config Release -- -k 0 || std_failed=1
-              echo "::endgroup::"
-            fi
-
-            if [ $std_failed -eq 0 ]; then
-              echo "::group::Test Release C++${std}"
-              ctest --test-dir build/${{ matrix.preset }}-cxx${std} --build-config Release \
-                --label-regex header --output-on-failure --no-compress-output \
-                --output-junit test-results-${{ matrix.compiler }}-cxx${std}-release-header.xml || std_failed=1
-              ctest --test-dir build/${{ matrix.preset }}-cxx${std} --build-config Release \
-                --label-regex unit --output-on-failure --no-compress-output \
-                --output-junit test-results-${{ matrix.compiler }}-cxx${std}-release-unit.xml || std_failed=1
-              ctest --test-dir build/${{ matrix.preset }}-cxx${std} --build-config Release \
-                --label-regex example --verbose --no-compress-output \
-                --output-junit test-results-${{ matrix.compiler }}-cxx${std}-release-example.xml || std_failed=1
-              echo "::endgroup::"
-            fi
-
-            [ $std_failed -ne 0 ] && overall_failed=1
-          done
-          exit $overall_failed
+      - name: Build and test C++26
+        id: build_test_cxx26
+        if: always() && contains(matrix.cxxstds, '26')
+        uses: ./.github/actions/build-test-std
+        with:
+          std: "26"
+          preset: ${{ matrix.preset }}
+          compiler: ${{ matrix.compiler }}
+          cc: ${{ matrix.cc }}
+          cxx: ${{ matrix.cxx }}
 
       - name: Upload test results
         id: upload_test_results

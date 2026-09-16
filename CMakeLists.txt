@@ -24,9 +24,18 @@ if(PROJECT_IS_TOP_LEVEL)
     set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
     set(CMAKE_CXX_VISIBILITY_PRESET hidden)
     set(CMAKE_VISIBILITY_INLINES_HIDDEN ON)
+    # PDBs are generated for every configuration (including Release) so that
+    # DbgHelp-based symbolization (the win32 backend) can resolve names and
+    # source info in Release builds too, not just Debug/RelWithDebInfo.
+    # CMAKE_MSVC_DEBUG_INFORMATION_FORMAT only selects the compiler's /Zi;
+    # CMake's default linker flags only add /DEBUG for Debug/RelWithDebInfo,
+    # so it must be requested explicitly for Release here.
     set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT
-        "$<$<CONFIG:Debug,RelWithDebInfo>:ProgramDatabase>"
+        "$<$<CONFIG:Debug,Release,RelWithDebInfo>:ProgramDatabase>"
     )
+    if(MSVC)
+        string(APPEND CMAKE_EXE_LINKER_FLAGS_RELEASE " /DEBUG")
+    endif()
 
     option(BUILD_EXAMPLES "Build the examples" ON)
     include(CTest)
@@ -52,6 +61,7 @@ endif()
 set(EGGS_STACKTRACE_BACKEND_EXPORT_null Null)
 set(EGGS_STACKTRACE_BACKEND_EXPORT_libbacktrace Libbacktrace)
 set(EGGS_STACKTRACE_BACKEND_EXPORT_execinfo Execinfo)
+set(EGGS_STACKTRACE_BACKEND_EXPORT_win32 Win32)
 
 # -- Common OBJECT library ----
 
@@ -162,6 +172,10 @@ if(EGGS_STACKTRACE_HAVE_EXECINFO)
     eggs_stacktrace_add_backend(execinfo _eggs_stacktrace_execinfo_support)
 endif()
 
+if(WIN32)
+    eggs_stacktrace_add_backend(win32 DbgHelp)
+endif()
+
 # -- Main alias ----------------------------------------------------------------
 # Note: ALIAS cannot alias another ALIAS, so we alias the internal target name.
 # libbacktrace is preferred over execinfo: it additionally resolves source
@@ -171,6 +185,8 @@ if(TARGET _eggs_stacktrace_libbacktrace)
     set(EGGS_STACKTRACE_DEFAULT_BACKEND libbacktrace)
 elseif(TARGET _eggs_stacktrace_execinfo)
     set(EGGS_STACKTRACE_DEFAULT_BACKEND execinfo)
+elseif(TARGET _eggs_stacktrace_win32)
+    set(EGGS_STACKTRACE_DEFAULT_BACKEND win32)
 else()
     set(EGGS_STACKTRACE_DEFAULT_BACKEND null)
 endif()
@@ -228,7 +244,7 @@ if(ENABLE_INSTALL)
                     FILES
                         "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/eggs_stacktrace_${name}.pdb"
                     DESTINATION ${CMAKE_INSTALL_LIBDIR}
-                    CONFIGURATIONS Debug RelWithDebInfo
+                    CONFIGURATIONS Debug Release RelWithDebInfo
                     OPTIONAL
                 )
             endif()
@@ -238,6 +254,7 @@ if(ENABLE_INSTALL)
     eggs_stacktrace_install_backend(null)
     eggs_stacktrace_install_backend(libbacktrace)
     eggs_stacktrace_install_backend(execinfo)
+    eggs_stacktrace_install_backend(win32)
 
     install(
         EXPORT EggsStacktraceTargets

@@ -8,10 +8,6 @@
 
 #include <eggs/stacktrace.hpp>
 
-#if __cplusplus >= 202002L
-#    include <version>
-#endif
-
 #ifdef __cpp_lib_format
 
 #    include <format>

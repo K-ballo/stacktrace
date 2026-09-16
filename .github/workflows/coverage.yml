@@ -46,6 +46,12 @@ jobs:
           sudo update-alternatives --install /usr/bin/clang   clang   /usr/bin/clang-22   200
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-22 200
 
+      - name: Install libstdc++-16
+        run: |
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y g++-16
+
       - name: Fix APT cache permissions
         if: always()
         run: sudo rm -rf ~/.cache/apt/archives/lock ~/.cache/apt/archives/partial
@@ -53,8 +59,8 @@ jobs:
       - name: Configure (coverage)
         run: |
           cmake --preset dev-clang -B build/coverage \
-            -DCMAKE_CXX_FLAGS="-fprofile-instr-generate -fcoverage-mapping" \
-            -DCMAKE_EXE_LINKER_FLAGS="-fprofile-instr-generate"
+            -DCMAKE_CXX_FLAGS_INIT="--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/16 -fprofile-instr-generate -fcoverage-mapping" \
+            -DCMAKE_EXE_LINKER_FLAGS_INIT="-fprofile-instr-generate"
 
       - name: Build
         run: cmake --build build/coverage --config Debug
@@ -76,9 +82,20 @@ jobs:
           first="${objects[0]}"
           obj_args=()
           for o in "${objects[@]:1}"; do obj_args+=("-object=$o"); done
-          llvm-cov-22 report "$first" "${obj_args[@]}" \
+          report=$(llvm-cov-22 report "$first" "${obj_args[@]}" \
             -instr-profile=build/coverage/coverage.profdata \
-            -use-color=false src include/eggs 2>/dev/null
+            -path-equivalence=".,${GITHUB_WORKSPACE}" \
+            -use-color=false src include/eggs 2>/dev/null)
+          echo "$report"
+          if [ -n "$GITHUB_STEP_SUMMARY" ]; then
+            {
+              echo "## Coverage report (llvm-cov)"
+              echo
+              echo '```'
+              echo "$report"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Generate HTML report
         run: |
@@ -88,6 +105,7 @@ jobs:
           for o in "${objects[@]:1}"; do obj_args+=("-object=$o"); done
           llvm-cov-22 show "$first" "${obj_args[@]}" \
             -instr-profile=build/coverage/coverage.profdata \
+            -path-equivalence=".,${GITHUB_WORKSPACE}" \
             -format=html \
             -output-dir=build/coverage/html \
             -show-line-counts-or-regions \
@@ -148,8 +166,8 @@ jobs:
       - name: Configure (coverage)
         run: |
           cmake --preset dev-gcc -B build/coverage-gcc \
-            -DCMAKE_CXX_FLAGS="--coverage" \
-            -DCMAKE_EXE_LINKER_FLAGS="--coverage"
+            -DCMAKE_CXX_FLAGS_INIT="--coverage" \
+            -DCMAKE_EXE_LINKER_FLAGS_INIT="--coverage"
 
       - name: Build
         run: cmake --build build/coverage-gcc --config Debug
@@ -164,22 +182,36 @@ jobs:
         run: |
           lcov --capture \
                --gcov-tool gcov-16 \
+               --rc branch_coverage=1 \
                --ignore-errors mismatch,inconsistent \
+               --base-directory . \
                --directory build/coverage-gcc \
                --output-file build/coverage-gcc/coverage.info
           lcov --extract build/coverage-gcc/coverage.info \
                '*/src/*' '*/include/eggs/*' \
+               --rc branch_coverage=1 \
                --ignore-errors unused \
                --output-file build/coverage-gcc/coverage.info
 
       - name: Coverage report
         run: |
-          lcov --list build/coverage-gcc/coverage.info
+          report=$(lcov --list build/coverage-gcc/coverage.info --rc branch_coverage=1)
+          echo "$report"
+          if [ -n "$GITHUB_STEP_SUMMARY" ]; then
+            {
+              echo "## Coverage report (gcov)"
+              echo
+              echo '```'
+              echo "$report"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
       - name: Generate HTML report
         run: |
           genhtml build/coverage-gcc/coverage.info \
             --output-directory build/coverage-gcc/html \
+            --rc branch_coverage=1 \
             --quiet
 
       - name: Upload coverage report

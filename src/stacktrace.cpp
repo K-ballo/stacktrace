@@ -8,6 +8,7 @@
 
 #include <eggs/stacktrace.hpp>
 
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <sstream>

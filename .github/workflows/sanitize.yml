@@ -8,20 +8,24 @@
 
 name: sanitize
 
+run-name: "${{ github.event.workflow_run.head_commit.message }}"
+
 on:
-  push:
-    branches: [ main, feature/** ]
-  pull_request:
-    types: [opened, synchronize, reopened]
+  workflow_run:
+    workflows: [test]
+    types: [completed]
 
 jobs:
   asan:
     name: ubuntu-24.04 / ASan + UBSan
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    if: github.event.workflow_run.conclusion == 'success'
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Install CMake
         uses: lukka/get-cmake@latest

@@ -5,21 +5,24 @@
 
 name: coverage
 
+run-name: "${{ github.event.workflow_run.head_commit.message }}"
+
 on:
-  push:
-    branches: [ main, feature/** ]
-  pull_request:
-    types: [opened, synchronize, reopened]
-  workflow_dispatch:
+  workflow_run:
+    workflows: [test]
+    types: [completed]
 
 jobs:
   coverage:
     name: ubuntu-24.04 / llvm-cov
     runs-on: ubuntu-24.04
     timeout-minutes: 6
+    if: github.event.workflow_run.conclusion == 'success'
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Install CMake
         uses: lukka/get-cmake@latest
@@ -104,9 +107,12 @@ jobs:
     name: ubuntu-24.04 / gcov
     runs-on: ubuntu-24.04
     timeout-minutes: 6
+    if: github.event.workflow_run.conclusion == 'success'
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Install CMake
         uses: lukka/get-cmake@latest

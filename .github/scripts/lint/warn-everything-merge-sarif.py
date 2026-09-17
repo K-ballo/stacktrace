@@ -12,6 +12,7 @@ into a single conforming SARIF 2.1.0 log for the whole build.
 """
 
 import json
+import os
 import pathlib
 import sys
 
@@ -26,14 +27,15 @@ def main() -> int:
     objects = sorted(build_dir.rglob("*.o"))
     fragments = sorted(build_dir.rglob("*.sarif.json"))
 
+    on_actions = os.environ.get("GITHUB_ACTIONS") == "true"
     for obj in objects:
         sidecar = obj.with_name(obj.name + ".sarif.json")
         if not sidecar.exists():
-            print(
-                f"::warning::no diagnostics captured for {obj} "
-                "(compiler launcher not invoked for this translation unit?)",
-                file=sys.stderr,
+            message = (
+                f"no diagnostics captured for {obj} "
+                "(compiler launcher not invoked for this translation unit?)"
             )
+            print(f"::warning::{message}" if on_actions else message, file=sys.stderr)
 
     results = []
     for fragment in fragments:
@@ -65,11 +67,19 @@ def main() -> int:
     counts: dict[str, int] = {}
     for result in results:
         counts[result["ruleId"]] = counts.get(result["ruleId"], 0) + 1
-    for rule_id, count in sorted(counts.items(), key=lambda kv: -kv[1]):
-        print(f"{count:4d}  {rule_id}")
-    print(
-        f"{len(results)} warning(s) across {len(fragments)} translation unit(s) -> {output}"
-    )
+    by_rule = sorted(counts.items(), key=lambda kv: -kv[1])
+    rule_lines = [f"{count:4d}  {rule_id}" for rule_id, count in by_rule]
+    for line in rule_lines:
+        print(line)
+    total = f"{len(results)} warning(s) across {len(fragments)} translation unit(s) -> {output}"
+    print(total)
+
+    step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
+    if results and step_summary:
+        with open(step_summary, "a", encoding="utf-8") as f:
+            f.write("## -Weverything summary\n\n```\n")
+            f.write("\n".join([*rule_lines, total]))
+            f.write("\n```\n")
 
     return 0
 

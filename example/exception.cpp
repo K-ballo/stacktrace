@@ -44,7 +44,13 @@ struct traced_error : std::runtime_error
           trace(eggs::stacktrace::current(1))
     {
     }
+
+    traced_error(traced_error const&) = default;
+    traced_error& operator=(traced_error const&) = default;
+    ~traced_error() override;
 };
+
+traced_error::~traced_error() = default;
 
 // -- Same call chain as basic.cpp ----------------------------------------------
 
@@ -52,7 +58,7 @@ namespace example {
 
 namespace {
 
-EGGS_STACKTRACE_NOINLINE void innermost()
+[[noreturn]] EGGS_STACKTRACE_NOINLINE void innermost()
 {
     throw traced_error("something went wrong");
 }
@@ -60,14 +66,17 @@ EGGS_STACKTRACE_NOINLINE void innermost()
 // Not pinned: may be inlined into middle() under optimisation.
 // Debug: visible as a distinct (anonymous namespace)::adapt frame.
 // Release: typically absent - merged into middle().
-void adapt()
+[[noreturn]] void adapt()
 {
     innermost();
 }
 
 } // namespace
 
-EGGS_STACKTRACE_NOINLINE void middle()
+[[noreturn]] void middle();
+[[noreturn]] void dispatch();
+
+[[noreturn]] EGGS_STACKTRACE_NOINLINE void middle()
 {
     adapt();
 }
@@ -75,7 +84,7 @@ EGGS_STACKTRACE_NOINLINE void middle()
 // Not pinned: may be inlined into outer<42>() under optimisation.
 // Debug: visible as example::dispatch.
 // Release: typically absent - merged into outer<42>().
-void dispatch()
+[[noreturn]] void dispatch()
 {
     middle();
 }

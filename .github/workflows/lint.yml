@@ -76,6 +76,12 @@ jobs:
           sudo update-alternatives --install /usr/bin/clang   clang   /usr/bin/clang-22   200
           sudo update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-22 200
 
+      - name: Install libstdc++-16
+        run: |
+          sudo add-apt-repository -y ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+          sudo apt-get install -y g++-16
+
       - name: Fix APT cache permissions
         if: always()
         run: sudo rm -rf ~/.cache/apt/archives/lock ~/.cache/apt/archives/partial
@@ -84,7 +90,8 @@ jobs:
         run: cmake --preset dev-clang -B build/warn-everything
                -DCMAKE_COMPILE_WARNING_AS_ERROR=OFF
                -DCMAKE_CXX_COMPILER_LAUNCHER="python3;${{ github.workspace }}/.github/scripts/lint/warn-everything-launcher.py"
-               -DCMAKE_CXX_FLAGS_INIT="-Weverything
+               -DCMAKE_CXX_FLAGS_INIT="--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/16
+                 -Weverything
                  -Wno-c++98-compat -Wno-c++98-compat-pedantic
                  -Wno-c++11-compat
                  -Wno-c++14-compat
@@ -93,7 +100,8 @@ jobs:
                  -Wno-pre-c++17-compat -Wno-pre-c++17-compat-pedantic
                  -Wno-c++20-compat
                  -Wno-pre-c++20-compat -Wno-pre-c++20-compat-pedantic
-                 -Wno-pre-c++23-compat -Wno-pre-c++23-compat-pedantic"
+                 -Wno-pre-c++23-compat -Wno-pre-c++23-compat-pedantic
+                 -Wno-unsafe-buffer-usage"
 
       - name: Build (Debug)
         run: cmake --build build/warn-everything --config Debug -- -k 0
@@ -125,6 +133,10 @@ jobs:
         if: steps.diff-base.outputs.ref != ''
         run: python3 .github/scripts/lint/warn-everything-check-changed.py
                build/warn-everything/warn-everything.sarif ${{ steps.diff-base.outputs.ref }}
+
+      - name: Check warnings from headers
+        run: python3 .github/scripts/lint/warn-everything-check-headers.py
+               build/warn-everything/warn-everything.sarif
 
   include-cleaner:
     name: clang-include-cleaner (clang-22)

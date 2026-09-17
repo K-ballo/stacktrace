@@ -7,11 +7,12 @@
 # See accompanying file LICENSE.txt or copy at
 # http://www.boost.org/LICENSE_1_0.txt
 
-"""Annotate any -Weverything warning in a merged SARIF report that falls on a
-line changed relative to a base ref (e.g. origin/main).
+"""Annotate any warning in a SARIF report that falls on a line changed
+relative to a base ref (e.g. origin/main).
 """
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -46,10 +47,11 @@ def changed_lines(base_ref: str) -> dict[str, set[int]]:
 
 
 def main() -> int:
-    if len(sys.argv) != 3:
-        sys.exit(f"usage: {sys.argv[0]} <sarif-path> <base-ref>")
+    if len(sys.argv) not in (3, 4):
+        sys.exit(f"usage: {sys.argv[0]} <sarif-path> <base-ref> [label]")
 
     sarif_path, base_ref = sys.argv[1], sys.argv[2]
+    label = sys.argv[3] if len(sys.argv) == 4 else "-Weverything"
     with open(sarif_path, encoding="utf-8") as f:
         results = json.load(f)["runs"][0]["results"]
 
@@ -69,14 +71,15 @@ def main() -> int:
         seen.add(key)
         flagged.append((uri, region, result["ruleId"], result["message"]["text"]))
 
-    for uri, region, rule_id, message in flagged:
-        print(
-            f"::error file={uri},line={region['startLine']},col={region['startColumn']}::[{rule_id}] {message}"
-        )
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        for uri, region, rule_id, message in flagged:
+            print(
+                f"::error file={uri},line={region['startLine']},col={region['startColumn']}::[{rule_id}] {message}"
+            )
 
     if flagged:
         print(
-            f"{len(flagged)} -Weverything warning(s) on lines changed relative to {base_ref}.",
+            f"{len(flagged)} {label} warning(s) on lines changed relative to {base_ref}.",
             file=sys.stderr,
         )
 

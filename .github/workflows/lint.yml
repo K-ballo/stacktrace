@@ -37,6 +37,82 @@ jobs:
       - name: Check every header/source file is referenced by a CMake target
         run: python3 .github/scripts/lint/check_orphan_sources.py build/lint
 
+  clang-tidy:
+    name: clang-tidy (clang-22)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+
+    env:
+      EGGS_STACKTRACE_SOURCE_DIR: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "4.4.0"
+
+      - name: Set up APT package cache
+        run: |
+          mkdir -p ~/.cache/apt/archives/partial
+          echo "Dir::Cache::archives \"$HOME/.cache/apt/archives\";" \
+            | sudo tee /etc/apt/apt.conf.d/99user-cache
+
+      - name: Cache APT packages
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: ~/.cache/apt/archives
+          key: apt-ubuntu-24.04-clang-tidy-22-${{ hashFiles('.github/workflows/lint.yml') }}
+          restore-keys: apt-ubuntu-24.04-clang-tidy-22-
+
+      - name: Install Clang 22 + clang-tidy
+        run: |
+          wget -q https://apt.llvm.org/llvm.sh
+          sudo bash llvm.sh 22
+          sudo apt-get install -y clang-tidy-22
+          sudo update-alternatives --install /usr/bin/clang      clang      /usr/bin/clang-22      200
+          sudo update-alternatives --install /usr/bin/clang++    clang++    /usr/bin/clang++-22    200
+          sudo update-alternatives --install /usr/bin/clang-tidy clang-tidy /usr/bin/clang-tidy-22 200
+
+      - name: Fix APT cache permissions
+        if: always()
+        run: sudo rm -rf ~/.cache/apt/archives/lock ~/.cache/apt/archives/partial
+
+      - name: Configure
+        run: cmake --preset dev-clang -B build/clang-tidy
+
+      - name: Run clang-tidy
+        run: python3 .github/scripts/lint/clang-tidy-run.py
+               build/clang-tidy build/clang-tidy/clang-tidy.sarif
+
+      - name: Upload SARIF
+        uses: actions/upload-artifact@v6
+        with:
+          name: clang-tidy.sarif
+          path: build/clang-tidy/clang-tidy.sarif
+          retention-days: 7
+
+      - name: Determine diff base
+        id: diff-base
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            if git rev-parse --verify -q HEAD^ > /dev/null; then
+              echo "ref=HEAD^" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            git fetch origin main
+            echo "ref=origin/main" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check warnings on changed lines
+        if: steps.diff-base.outputs.ref != ''
+        run: python3 .github/scripts/lint/warn-everything-check-changed.py
+               build/clang-tidy/clang-tidy.sarif ${{ steps.diff-base.outputs.ref }} clang-tidy
+
   warn-everything:
     name: -Weverything (clang-22)
     runs-on: ubuntu-24.04

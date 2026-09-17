@@ -8,7 +8,6 @@
 
 #include <eggs/stacktrace.hpp>
 
-#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <sstream>
@@ -95,8 +94,8 @@ std::string to_string(stacktrace_entry entry)
 std::string to_string(stacktrace const& st)
 {
     std::string result;
-    for (std::size_t i = 0; i < st.size(); ++i) {
-        result += to_string(st[i]);
+    for (auto i : st) {
+        result += eggs::to_string(i);
         result += '\n';
     }
     return result;

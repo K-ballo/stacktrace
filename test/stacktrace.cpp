@@ -24,7 +24,7 @@ int main()
 
     auto st = eggs::stacktrace::current();
     EGGS_STACKTRACE_CHECK(st.empty());
-    EGGS_STACKTRACE_CHECK(st.size() == 0u);
+    EGGS_STACKTRACE_CHECK(st.empty());
     EGGS_STACKTRACE_CHECK(st.begin() == st.end());
     EGGS_STACKTRACE_CHECK(st.cbegin() == st.cend());
     EGGS_STACKTRACE_CHECK(st.rbegin() == st.rend());
@@ -41,13 +41,14 @@ int main()
 
     // -- max_size --------------------------------------------------------------
 
-    EGGS_STACKTRACE_CHECK(st.max_size() > 0u);
+    EGGS_STACKTRACE_CHECK(st.max_size() > 0U);
 
     // -- Element access --------------------------------------------------------
 
     bool threw = false;
     try {
-        (void)st.at(0);
+        auto const& entry = st.at(0);
+        (void)entry;
     } catch (std::out_of_range const&) {
         threw = true;
     }
@@ -59,7 +60,7 @@ int main()
     EGGS_STACKTRACE_CHECK(copied.empty());
     EGGS_STACKTRACE_CHECK(copied == st);
 
-    eggs::stacktrace moved(std::move(copied));
+    eggs::stacktrace const moved(std::move(copied));
     EGGS_STACKTRACE_CHECK(moved.empty());
     EGGS_STACKTRACE_CHECK(moved == st);
 
@@ -73,7 +74,8 @@ int main()
 
     // -- swap ------------------------------------------------------------------
 
-    eggs::stacktrace a, b;
+    eggs::stacktrace a;
+    eggs::stacktrace b;
     a.swap(b);
     EGGS_STACKTRACE_CHECK(a.empty() && b.empty());
 
@@ -97,17 +99,17 @@ int main()
 
     // -- to_string -------------------------------------------------------------
 
-    EGGS_STACKTRACE_CHECK(eggs::to_string(st) == "");
+    EGGS_STACKTRACE_CHECK(eggs::to_string(st).empty());
 
     // -- operator<< -----------------------------------------------------------
 
     std::ostringstream oss;
     oss << st;
-    EGGS_STACKTRACE_CHECK(oss.str() == "");
+    EGGS_STACKTRACE_CHECK(oss.str().empty());
 
     // -- Hash --------------------------------------------------------------------
 
-    std::hash<eggs::stacktrace> h;
+    std::hash<eggs::stacktrace> const h;
     EGGS_STACKTRACE_CHECK(h(st) == h(a));
 
     return eggs::test_support::report();

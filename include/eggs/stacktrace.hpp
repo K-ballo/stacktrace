@@ -50,7 +50,8 @@ class stacktrace_entry
     ~stacktrace_entry() = default;
 
     // [stacktrace.entry.obs]
-    constexpr native_handle_type native_handle() const noexcept
+    EGGS_STACKTRACE_NODISCARD constexpr native_handle_type
+    native_handle() const noexcept
     {
         return address_;
     }
@@ -64,9 +65,9 @@ class stacktrace_entry
     // [stacktrace.entry.query]
     // Errors other than memory allocation failures are treated as "no
     // information available" and do not cause exceptions to be thrown.
-    std::string description() const;
-    std::string source_file() const;
-    std::uint_least32_t source_line() const;
+    EGGS_STACKTRACE_NODISCARD std::string description() const;
+    EGGS_STACKTRACE_NODISCARD std::string source_file() const;
+    EGGS_STACKTRACE_NODISCARD std::uint_least32_t source_line() const;
 
     // [stacktrace.entry.cmp]
     // Returns: true iff x and y represent the same entry or both are empty.
@@ -178,39 +179,60 @@ class stacktrace
 
     // [stacktrace.basic.obs]
 
-    const_iterator begin() const noexcept { return frames_.data(); }
+    EGGS_STACKTRACE_NODISCARD const_iterator begin() const noexcept
+    {
+        return frames_.data();
+    }
 
-    const_iterator end() const noexcept
+    EGGS_STACKTRACE_NODISCARD const_iterator end() const noexcept
     {
         return frames_.data() + frames_.size();
     }
 
-    const_iterator cbegin() const noexcept { return begin(); }
+    EGGS_STACKTRACE_NODISCARD const_iterator cbegin() const noexcept
+    {
+        return begin();
+    }
 
-    const_iterator cend() const noexcept { return end(); }
+    EGGS_STACKTRACE_NODISCARD const_iterator cend() const noexcept
+    {
+        return end();
+    }
 
-    const_reverse_iterator rbegin() const noexcept
+    EGGS_STACKTRACE_NODISCARD const_reverse_iterator rbegin() const noexcept
     {
         return const_reverse_iterator{end()};
     }
 
-    const_reverse_iterator rend() const noexcept
+    EGGS_STACKTRACE_NODISCARD const_reverse_iterator rend() const noexcept
     {
         return const_reverse_iterator{begin()};
     }
 
-    const_reverse_iterator crbegin() const noexcept { return rbegin(); }
+    EGGS_STACKTRACE_NODISCARD const_reverse_iterator crbegin() const noexcept
+    {
+        return rbegin();
+    }
 
-    const_reverse_iterator crend() const noexcept { return rend(); }
+    EGGS_STACKTRACE_NODISCARD const_reverse_iterator crend() const noexcept
+    {
+        return rend();
+    }
 
     EGGS_STACKTRACE_NODISCARD bool empty() const noexcept
     {
         return frames_.empty();
     }
 
-    size_type size() const noexcept { return frames_.size(); }
+    EGGS_STACKTRACE_NODISCARD size_type size() const noexcept
+    {
+        return frames_.size();
+    }
 
-    size_type max_size() const noexcept { return frames_.max_size(); }
+    EGGS_STACKTRACE_NODISCARD size_type max_size() const noexcept
+    {
+        return frames_.max_size();
+    }
 
     // [stacktrace.basic.elem]
 
@@ -220,7 +242,7 @@ class stacktrace
         return frames_[idx];
     }
 
-    const_reference at(size_type idx) const
+    EGGS_STACKTRACE_NODISCARD const_reference at(size_type idx) const
     {
         if (idx >= frames_.size())
             throw std::out_of_range{"eggs::stacktrace::at"};
@@ -328,7 +350,7 @@ struct std::hash<eggs::stacktrace>
     {
         std::size_t seed = st.size();
         for (auto const& e : st)
-            seed ^= std::hash<eggs::stacktrace_entry>{}(e) + 0x9e3779b9u +
+            seed ^= std::hash<eggs::stacktrace_entry>{}(e) + 0x9e3779b9U +
                     (seed << 6) + (seed >> 2);
         return seed;
     }
@@ -360,9 +382,12 @@ struct std::formatter<eggs::stacktrace_entry, char>
 template <>
 struct std::formatter<eggs::stacktrace, char>
 {
-    constexpr auto parse(std::format_parse_context& ctx) { return ctx.begin(); }
+    static constexpr auto parse(std::format_parse_context& ctx)
+    {
+        return ctx.begin();
+    }
 
-    auto format(eggs::stacktrace const& st, std::format_context& ctx) const
+    static auto format(eggs::stacktrace const& st, std::format_context& ctx)
     {
         return std::format_to(ctx.out(), "{}", eggs::to_string(st));
     }

@@ -1,0 +1,52 @@
+# Eggs.Stacktrace
+#
+# Copyright (c) 2026 Agustin Berge
+#
+# Distributed under the Boost Software License, Version 1.0.
+# See accompanying file LICENSE.txt or copy at
+# http://www.boost.org/LICENSE_1_0.txt
+
+# Exclusions, beyond checks that just don't apply (e.g. llvm-*, fuchsia-*):
+#   cppcoreguidelines-macro-usage           EGGS_STACKTRACE_NODISCARD is a raw macro,
+#                                            the only way to shim [[nodiscard]] pre-C++17
+#   cppcoreguidelines-pro-bounds-*          this library's domain is raw void* addresses
+#                                            and unchecked operator[] over its frame
+#                                            sequence (mirrors std::stacktrace); the GSL
+#                                            span/at() bounds-safety profile isn't in use
+#   modernize-use-trailing-return-type      not this codebase's return-type style
+#   portability-avoid-pragma-once          `#pragma once` is this codebase's header-guard style
+#   readability-braces-around-statements   conflicts with AllowShortIfStatementsOnASingleLine
+#   readability-identifier-length           short names (i, x, y, ...) are used deliberately
+#   modernize-use-std-print                 std::print is C++23
+#   modernize-concat-nested-namespaces      nested namespace definitions are C++17
+#   readability-use-concise-preprocessor-directives  #elifdef/#elifndef are C++23
+
+Checks: >
+  bugprone-*,
+  cert-*,
+  clang-analyzer-*,
+  cppcoreguidelines-*,
+  misc-*,
+  modernize-*,
+  performance-*,
+  portability-*,
+  readability-*,
+  -cppcoreguidelines-macro-usage,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-avoid-unchecked-container-access,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -modernize-use-trailing-return-type,
+  -portability-avoid-pragma-once,
+  -readability-braces-around-statements,
+  -readability-identifier-length,
+  -modernize-use-std-print,
+  -modernize-concat-nested-namespaces,
+  -readability-use-concise-preprocessor-directives
+
+HeaderFilterRegex: '.*'
+WarningsAsErrors: ''
+
+CheckOptions:
+  misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic: true
+  modernize-use-nodiscard.ReplacementString: EGGS_STACKTRACE_NODISCARD
+  readability-named-parameter.InsertPlainNamesInForwardDecls: true

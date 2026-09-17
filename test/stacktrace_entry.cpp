@@ -19,17 +19,17 @@ int main()
 {
     // -- Default construction --------------------------------------------------
 
-    eggs::stacktrace_entry e;
+    eggs::stacktrace_entry const e;
 
     EGGS_STACKTRACE_CHECK(e.native_handle() == nullptr);
     EGGS_STACKTRACE_CHECK(!e);
-    EGGS_STACKTRACE_CHECK(e.description() == "");
-    EGGS_STACKTRACE_CHECK(e.source_file() == "");
-    EGGS_STACKTRACE_CHECK(e.source_line() == 0u);
+    EGGS_STACKTRACE_CHECK(e.description().empty());
+    EGGS_STACKTRACE_CHECK(e.source_file().empty());
+    EGGS_STACKTRACE_CHECK(e.source_line() == 0U);
 
     // -- Equality --------------------------------------------------------------
 
-    eggs::stacktrace_entry e2;
+    eggs::stacktrace_entry const e2;
 
     EGGS_STACKTRACE_CHECK(e == e2);
     EGGS_STACKTRACE_CHECK(!(e != e2));
@@ -46,14 +46,14 @@ int main()
 
     // -- Hash ------------------------------------------------------------------
 
-    std::hash<eggs::stacktrace_entry> h;
+    std::hash<eggs::stacktrace_entry> const h;
     EGGS_STACKTRACE_CHECK(h(e) == h(e2));
 
     // -- operator<< --------------------------------------------------------
 
     std::ostringstream oss;
     oss << e;
-    EGGS_STACKTRACE_CHECK(oss.str() == "");
+    EGGS_STACKTRACE_CHECK(oss.str().empty());
 
     return eggs::test_support::report();
 }

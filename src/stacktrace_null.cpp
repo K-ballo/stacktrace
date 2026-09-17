@@ -18,21 +18,24 @@
 namespace eggs {
 namespace detail {
 
-void capture(std::vector<stacktrace_entry>&, std::size_t, std::size_t) noexcept
+void capture(
+    std::vector<stacktrace_entry>& /*unused*/, std::size_t /*unused*/,
+    std::size_t /*unused*/
+) noexcept
 {
 }
 
-std::string symbolize_description(void*)
-{
-    return {};
-}
-
-std::string symbolize_source_file(void*)
+std::string symbolize_description(void* /*unused*/)
 {
     return {};
 }
 
-std::uint_least32_t symbolize_source_line(void*)
+std::string symbolize_source_file(void* /*unused*/)
+{
+    return {};
+}
+
+std::uint_least32_t symbolize_source_line(void* /*unused*/)
 {
     return 0;
 }

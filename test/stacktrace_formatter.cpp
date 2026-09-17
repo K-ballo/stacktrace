@@ -18,11 +18,11 @@ int main()
 {
     // Default-constructed (null) entry formats to empty string.
     eggs::stacktrace_entry e;
-    EGGS_STACKTRACE_CHECK(std::format("{}", e) == "");
+    EGGS_STACKTRACE_CHECK(std::format("{}", e).empty());
 
     // Empty stacktrace formats to empty string.
     eggs::stacktrace st;
-    EGGS_STACKTRACE_CHECK(std::format("{}", st) == "");
+    EGGS_STACKTRACE_CHECK(std::format("{}", st).empty());
 
     return eggs::test_support::report();
 }

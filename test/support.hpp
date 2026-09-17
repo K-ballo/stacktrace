@@ -37,21 +37,23 @@ inline int report()
     std::fprintf(
         stderr, "%d passed, %d failed\n", counters<>::passed, counters<>::failed
     );
-    return counters<>::failed != 0;
+    return counters<>::failed ? 1 : 0;
+}
+
+inline void check(bool cond, char const* file, int line, char const* expr)
+{
+    if (cond) {
+        ++counters<>::passed;
+    } else {
+        std::fprintf(stderr, "%s:%d: check failed: %s\n", file, line, expr);
+        ++counters<>::failed;
+    }
 }
 
 } // namespace test_support
 } // namespace eggs
 
 #define EGGS_STACKTRACE_CHECK(...)                                       \
-    do {                                                                 \
-        if (static_cast<bool>(__VA_ARGS__)) {                            \
-            ++eggs::test_support::counters<>::passed;                    \
-        } else {                                                         \
-            std::fprintf(                                                \
-                stderr, "%s:%d: check failed: %s\n", __FILE__, __LINE__, \
-                #__VA_ARGS__                                             \
-            );                                                           \
-            ++eggs::test_support::counters<>::failed;                    \
-        }                                                                \
-    } while (false)
+    eggs::test_support::check(                                           \
+        static_cast<bool>(__VA_ARGS__), __FILE__, __LINE__, #__VA_ARGS__ \
+    )

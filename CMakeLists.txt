@@ -50,6 +50,7 @@ endif()
 # -- Exported names for each backend ------------------------------------------
 
 set(EGGS_STACKTRACE_BACKEND_EXPORT_null Null)
+set(EGGS_STACKTRACE_BACKEND_EXPORT_libbacktrace Libbacktrace)
 set(EGGS_STACKTRACE_BACKEND_EXPORT_execinfo Execinfo)
 
 # -- Common OBJECT library ----
@@ -137,6 +138,25 @@ endmacro()
 
 eggs_stacktrace_add_backend(null)
 
+include(CheckLibbacktraceBackend)
+eggs_stacktrace_check_libbacktrace_backend(
+    EGGS_STACKTRACE_LIBBACKTRACE_LIBRARY
+    EGGS_STACKTRACE_LIBBACKTRACE_INCLUDE_DIR
+)
+if(
+    EGGS_STACKTRACE_LIBBACKTRACE_LIBRARY
+    AND EGGS_STACKTRACE_LIBBACKTRACE_INCLUDE_DIR
+)
+    eggs_stacktrace_add_backend(
+        libbacktrace
+        ${EGGS_STACKTRACE_LIBBACKTRACE_LIBRARY}
+    )
+    target_include_directories(
+        _eggs_stacktrace_libbacktrace
+        PRIVATE ${EGGS_STACKTRACE_LIBBACKTRACE_INCLUDE_DIR}
+    )
+endif()
+
 include(CheckExecinfoBackend)
 eggs_stacktrace_check_execinfo_backend(EGGS_STACKTRACE_HAVE_EXECINFO)
 if(EGGS_STACKTRACE_HAVE_EXECINFO)
@@ -145,8 +165,12 @@ endif()
 
 # -- Main alias ----------------------------------------------------------------
 # Note: ALIAS cannot alias another ALIAS, so we alias the internal target name.
+# libbacktrace is preferred over execinfo: it additionally resolves source
+# file/line, which execinfo cannot provide.
 
-if(TARGET _eggs_stacktrace_execinfo)
+if(TARGET _eggs_stacktrace_libbacktrace)
+    set(EGGS_STACKTRACE_DEFAULT_BACKEND libbacktrace)
+elseif(TARGET _eggs_stacktrace_execinfo)
     set(EGGS_STACKTRACE_DEFAULT_BACKEND execinfo)
 else()
     set(EGGS_STACKTRACE_DEFAULT_BACKEND null)
@@ -205,6 +229,7 @@ if(ENABLE_INSTALL)
     endmacro()
 
     eggs_stacktrace_install_backend(null)
+    eggs_stacktrace_install_backend(libbacktrace)
     eggs_stacktrace_install_backend(execinfo)
 
     install(
@@ -215,7 +240,9 @@ if(ENABLE_INSTALL)
     )
 
     install(
-        FILES cmake/CheckExecinfoBackend.cmake
+        FILES
+            cmake/CheckLibbacktraceBackend.cmake
+            cmake/CheckExecinfoBackend.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/eggs.stacktrace
     )
 

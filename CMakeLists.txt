@@ -101,12 +101,51 @@ if(MSVC)
     )
 endif()
 
+# -- Backend selection -----------------------------------------------------
+
+set(EGGS_STACKTRACE_KNOWN_BACKENDS null execinfo libbacktrace win32)
+
+set(EGGS_STACKTRACE_BACKENDS
+    ""
+    CACHE STRING
+    "Semicolon-separated subset of backends to build: ${EGGS_STACKTRACE_KNOWN_BACKENDS}. \
+Empty (default) builds null unconditionally and auto-detects the rest, silently \
+skipping whichever aren't available for this platform/toolchain. Backends named \
+here are mandatory: configuration fails if one of them isn't available."
+)
+foreach(_backend IN LISTS EGGS_STACKTRACE_BACKENDS)
+    if(NOT _backend IN_LIST EGGS_STACKTRACE_KNOWN_BACKENDS)
+        message(
+            FATAL_ERROR
+            "Eggs.Stacktrace: unknown backend '${_backend}' in "
+            "EGGS_STACKTRACE_BACKENDS (known backends: "
+            "${EGGS_STACKTRACE_KNOWN_BACKENDS})"
+        )
+    endif()
+endforeach()
+unset(_backend)
+
+# eggs_stacktrace_want_backend(<name> <out-var>)
+#
+# Sets <out-var> ON if <name> should be attempted: always, unless
+# EGGS_STACKTRACE_BACKENDS is non-empty and doesn't list it.
+macro(eggs_stacktrace_want_backend name out_var)
+    if(
+        EGGS_STACKTRACE_BACKENDS
+        AND NOT "${name}" IN_LIST EGGS_STACKTRACE_BACKENDS
+    )
+        set(${out_var} OFF)
+    else()
+        set(${out_var} ON)
+    endif()
+endmacro()
+
 # -- Backend macro -------------------------------------------------------------
 
-set(EGGS_STACKTRACE_BACKENDS)
+set(EGGS_STACKTRACE_BUILT_BACKENDS)
 
 macro(eggs_stacktrace_add_backend name)
-    list(APPEND EGGS_STACKTRACE_BACKENDS ${name})
+    list(APPEND EGGS_STACKTRACE_BUILT_BACKENDS ${name})
     set(_export "${EGGS_STACKTRACE_BACKEND_EXPORT_${name}}")
     add_library(
         _eggs_stacktrace_${name}
@@ -146,49 +185,120 @@ endmacro()
 
 # -- Backend targets -----------------------------------------------------------
 
-eggs_stacktrace_add_backend(null)
+eggs_stacktrace_want_backend(null _want_null)
+if(_want_null)
+    eggs_stacktrace_add_backend(null)
+endif()
 
-include(CheckLibbacktraceBackend)
-eggs_stacktrace_check_libbacktrace_backend(EGGS_STACKTRACE_HAVE_LIBBACKTRACE)
-if(EGGS_STACKTRACE_HAVE_LIBBACKTRACE)
-    eggs_stacktrace_add_backend(
-        libbacktrace
-        _eggs_stacktrace_libbacktrace_support
+eggs_stacktrace_want_backend(libbacktrace _want_libbacktrace)
+if(_want_libbacktrace)
+    include(CheckLibbacktraceBackend)
+    eggs_stacktrace_check_libbacktrace_backend(
+        EGGS_STACKTRACE_HAVE_LIBBACKTRACE
     )
-    # #include'd by absolute path (see stacktrace_libbacktrace.cpp) instead
-    # of adding its directory to the search path. PRIVATE: only this
-    # translation unit needs it, unlike the support library's link
-    # requirement above, which must stay PUBLIC for consumers.
-    target_compile_definitions(
-        _eggs_stacktrace_libbacktrace
-        PRIVATE
-            EGGS_STACKTRACE_BACKTRACE_INCLUDE_FILE="${EGGS_STACKTRACE_LIBBACKTRACE_HEADER}"
-    )
+    if(EGGS_STACKTRACE_HAVE_LIBBACKTRACE)
+        eggs_stacktrace_add_backend(
+            libbacktrace
+            _eggs_stacktrace_libbacktrace_support
+        )
+        # #include'd by absolute path (see stacktrace_libbacktrace.cpp) instead
+        # of adding its directory to the search path. PRIVATE: only this
+        # translation unit needs it, unlike the support library's link
+        # requirement above, which must stay PUBLIC for consumers.
+        target_compile_definitions(
+            _eggs_stacktrace_libbacktrace
+            PRIVATE
+                EGGS_STACKTRACE_BACKTRACE_INCLUDE_FILE="${EGGS_STACKTRACE_LIBBACKTRACE_HEADER}"
+        )
+    elseif("libbacktrace" IN_LIST EGGS_STACKTRACE_BACKENDS)
+        message(
+            FATAL_ERROR
+            "Eggs.Stacktrace: backend 'libbacktrace' was requested in "
+            "EGGS_STACKTRACE_BACKENDS but is not available on this platform."
+        )
+    endif()
 endif()
 
-include(CheckExecinfoBackend)
-eggs_stacktrace_check_execinfo_backend(EGGS_STACKTRACE_HAVE_EXECINFO)
-if(EGGS_STACKTRACE_HAVE_EXECINFO)
-    eggs_stacktrace_add_backend(execinfo _eggs_stacktrace_execinfo_support)
+eggs_stacktrace_want_backend(execinfo _want_execinfo)
+if(_want_execinfo)
+    include(CheckExecinfoBackend)
+    eggs_stacktrace_check_execinfo_backend(EGGS_STACKTRACE_HAVE_EXECINFO)
+    if(EGGS_STACKTRACE_HAVE_EXECINFO)
+        eggs_stacktrace_add_backend(execinfo _eggs_stacktrace_execinfo_support)
+    elseif("execinfo" IN_LIST EGGS_STACKTRACE_BACKENDS)
+        message(
+            FATAL_ERROR
+            "Eggs.Stacktrace: backend 'execinfo' was requested in "
+            "EGGS_STACKTRACE_BACKENDS but is not available on this platform."
+        )
+    endif()
 endif()
 
-if(WIN32)
-    eggs_stacktrace_add_backend(win32 DbgHelp)
+eggs_stacktrace_want_backend(win32 _want_win32)
+if(_want_win32)
+    if(WIN32)
+        eggs_stacktrace_add_backend(win32 DbgHelp)
+    elseif("win32" IN_LIST EGGS_STACKTRACE_BACKENDS)
+        message(
+            FATAL_ERROR
+            "Eggs.Stacktrace: backend 'win32' was requested in "
+            "EGGS_STACKTRACE_BACKENDS but is not available on this platform."
+        )
+    endif()
 endif()
+
+unset(_want_null)
+unset(_want_libbacktrace)
+unset(_want_execinfo)
+unset(_want_win32)
 
 # -- Main alias ----------------------------------------------------------------
 # Note: ALIAS cannot alias another ALIAS, so we alias the internal target name.
 # libbacktrace is preferred over execinfo: it additionally resolves source
 # file/line, which execinfo cannot provide.
 
-if(TARGET _eggs_stacktrace_libbacktrace)
-    set(EGGS_STACKTRACE_DEFAULT_BACKEND libbacktrace)
-elseif(TARGET _eggs_stacktrace_execinfo)
-    set(EGGS_STACKTRACE_DEFAULT_BACKEND execinfo)
-elseif(TARGET _eggs_stacktrace_win32)
-    set(EGGS_STACKTRACE_DEFAULT_BACKEND win32)
+set(EGGS_STACKTRACE_DEFAULT_BACKEND
+    ""
+    CACHE STRING
+    "Backend aliased as Eggs::Stacktrace: ${EGGS_STACKTRACE_KNOWN_BACKENDS}. Empty \
+(default) picks the best backend that was built, preferring libbacktrace, then \
+execinfo, then win32, then null. Hard error if the requested backend was not \
+built."
+)
+set_property(
+    CACHE EGGS_STACKTRACE_DEFAULT_BACKEND
+    PROPERTY STRINGS "" ${EGGS_STACKTRACE_KNOWN_BACKENDS}
+)
+
+if(EGGS_STACKTRACE_DEFAULT_BACKEND)
+    if(
+        NOT EGGS_STACKTRACE_DEFAULT_BACKEND IN_LIST EGGS_STACKTRACE_KNOWN_BACKENDS
+    )
+        message(
+            FATAL_ERROR
+            "Eggs.Stacktrace: unknown backend "
+            "'${EGGS_STACKTRACE_DEFAULT_BACKEND}' in "
+            "EGGS_STACKTRACE_DEFAULT_BACKEND (known backends: "
+            "${EGGS_STACKTRACE_KNOWN_BACKENDS})"
+        )
+    elseif(NOT TARGET _eggs_stacktrace_${EGGS_STACKTRACE_DEFAULT_BACKEND})
+        message(
+            FATAL_ERROR
+            "Eggs.Stacktrace: EGGS_STACKTRACE_DEFAULT_BACKEND requested "
+            "'${EGGS_STACKTRACE_DEFAULT_BACKEND}', but that backend was not "
+            "built (see EGGS_STACKTRACE_BACKENDS)."
+        )
+    endif()
 else()
-    set(EGGS_STACKTRACE_DEFAULT_BACKEND null)
+    if(TARGET _eggs_stacktrace_libbacktrace)
+        set(EGGS_STACKTRACE_DEFAULT_BACKEND libbacktrace)
+    elseif(TARGET _eggs_stacktrace_execinfo)
+        set(EGGS_STACKTRACE_DEFAULT_BACKEND execinfo)
+    elseif(TARGET _eggs_stacktrace_win32)
+        set(EGGS_STACKTRACE_DEFAULT_BACKEND win32)
+    else()
+        set(EGGS_STACKTRACE_DEFAULT_BACKEND null)
+    endif()
 endif()
 
 add_library(

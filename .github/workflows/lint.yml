@@ -15,8 +15,13 @@ on:
     types: [opened, synchronize, reopened]
 
 jobs:
-  orphan-sources:
-    runs-on: ubuntu-latest
+  orphan-sources-configure:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+
+    runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v5
@@ -26,7 +31,13 @@ jobs:
         with:
           cmakeVersion: "4.4.0"
 
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
       - name: Enable CMake File API (codemodel-v2)
+        shell: bash
         run: |
           mkdir -p build/lint/.cmake/api/v1/query
           touch build/lint/.cmake/api/v1/query/codemodel-v2
@@ -34,8 +45,30 @@ jobs:
       - name: Configure
         run: cmake -S . -B build/lint
 
-      - name: Check every header/source file is referenced by a CMake target
-        run: python3 .github/scripts/lint/check_orphan_sources.py build/lint
+      - name: Record referenced source files
+        run: python .github/scripts/lint/check_orphan_sources.py --dump-referenced referenced-${{ matrix.os }}.json build/lint
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: orphan-sources-referenced-${{ matrix.os }}
+          path: referenced-${{ matrix.os }}.json
+          if-no-files-found: error
+
+  orphan-sources:
+    needs: orphan-sources-configure
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: orphan-sources-referenced-*
+          path: referenced
+          merge-multiple: true
+
+      - name: Check every header/source file is referenced by a CMake target on some platform
+        run: python3 .github/scripts/lint/check_orphan_sources.py referenced/*.json
 
   clang-tidy:
     name: clang-tidy (clang-22)

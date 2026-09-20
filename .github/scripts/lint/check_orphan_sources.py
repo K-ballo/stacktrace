@@ -8,7 +8,19 @@
 # http://www.boost.org/LICENSE_1_0.txt
 
 # Fail if a tracked header/source file is not referenced by any CMake target.
+#
+# Some source files are only added to a target on certain platforms (e.g.
+# stacktrace_win32.cpp is only referenced when WIN32). A single CMake
+# configure can therefore never see every platform-gated file referenced at
+# once, so this check runs in two steps, one per platform:
+#   --dump-referenced <out.json> <build-dir>
+#       Record the set of source files referenced by any target in a single
+#       platform's CMake configure.
+#   <referenced-1.json> [<referenced-2.json> ...]
+#       Union the recorded sets from every platform and fail if any tracked
+#       header/source file is referenced by none of them.
 
+import argparse
 import json
 import os
 import pathlib
@@ -76,10 +88,21 @@ def referenced_source_files(build_dir: pathlib.Path) -> set[str]:
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        sys.exit(f"usage: {sys.argv[0]} <build-dir>")
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dump-referenced", metavar="OUT_JSON")
+    parser.add_argument("paths", nargs="+", metavar="BUILD_DIR|REFERENCED_JSON")
+    args = parser.parse_args()
 
-    build_dir = pathlib.Path(sys.argv[1]).resolve()
+    if args.dump_referenced is not None:
+        if len(args.paths) != 1:
+            parser.error("--dump-referenced takes exactly one <build-dir>")
+        referenced = referenced_source_files(pathlib.Path(args.paths[0]).resolve())
+        pathlib.Path(args.dump_referenced).write_text(
+            json.dumps(sorted(referenced), indent=2), encoding="utf-8"
+        )
+        print(f"OK: recorded {len(referenced)} referenced source files.")
+        return 0
+
     repo_root = pathlib.Path(
         subprocess.run(
             ["git", "rev-parse", "--show-toplevel"],
@@ -90,7 +113,11 @@ def main() -> int:
     )
 
     tracked = tracked_source_files(repo_root)
-    referenced = referenced_source_files(build_dir)
+    referenced: set[str] = set()
+    for referenced_json in args.paths:
+        referenced.update(
+            json.loads(pathlib.Path(referenced_json).read_text(encoding="utf-8"))
+        )
 
     orphans = sorted(tracked - referenced)
     if orphans:

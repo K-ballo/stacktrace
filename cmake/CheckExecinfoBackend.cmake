@@ -14,7 +14,10 @@ include(CheckCXXSourceCompiles)
 # Checks whether the execinfo backend's dependencies (backtrace(),
 # dladdr(), and __cxa_demangle()) are all present and link successfully
 # against CMAKE_DL_LIBS, not merely that <execinfo.h> can be included.
-# Sets <out-var> as an internal cache boolean, visible to the caller.
+# Sets <out-var> as an internal cache boolean, visible to the caller. On
+# success, also defines the INTERFACE library
+# _eggs_stacktrace_execinfo_support, carrying CMAKE_DL_LIBS as a usage
+# requirement.
 function(eggs_stacktrace_check_execinfo_backend out_var)
     set(CMAKE_REQUIRED_DEFINITIONS -D_GNU_SOURCE)
     set(CMAKE_REQUIRED_LIBRARIES ${CMAKE_DL_LIBS})
@@ -36,4 +39,11 @@ function(eggs_stacktrace_check_execinfo_backend out_var)
         "
         ${out_var}
     )
+    if(${out_var} AND NOT TARGET _eggs_stacktrace_execinfo_support)
+        add_library(_eggs_stacktrace_execinfo_support INTERFACE)
+        target_link_libraries(
+            _eggs_stacktrace_execinfo_support
+            INTERFACE ${CMAKE_DL_LIBS}
+        )
+    endif()
 endfunction()

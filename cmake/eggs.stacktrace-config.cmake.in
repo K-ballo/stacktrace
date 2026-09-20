@@ -5,6 +5,32 @@ include("${CMAKE_CURRENT_LIST_DIR}/eggs.stacktrace-targets.cmake")
 # Create the canonical Eggs::Stacktrace alias for the configured default backend.
 if(NOT TARGET Eggs::Stacktrace)
     set(_eggs_stacktrace_default @EGGS_STACKTRACE_DEFAULT_BACKEND_EXPORT@)
+    if(_eggs_stacktrace_default STREQUAL "Libbacktrace")
+        if(TARGET Eggs::Stacktrace::Libbacktrace)
+            # The library path was resolved (and baked in, absolute) on the
+            # machine that built and installed this package; it may no
+            # longer exist on the machine consuming it (different
+            # toolchain install, moved GCC, ...).
+            get_target_property(
+                _eggs_stacktrace_libbacktrace_lib
+                Eggs::_eggs_stacktrace_libbacktrace_support
+                INTERFACE_LINK_LIBRARIES
+            )
+            if(
+                NOT _eggs_stacktrace_libbacktrace_lib
+                OR NOT EXISTS "${_eggs_stacktrace_libbacktrace_lib}"
+            )
+                message(
+                    WARNING
+                    "eggs.stacktrace: falling back to the Null backend"
+                )
+                set(_eggs_stacktrace_default Null)
+            endif()
+            unset(_eggs_stacktrace_libbacktrace_lib)
+        else()
+            set(_eggs_stacktrace_default Null)
+        endif()
+    endif()
     if(_eggs_stacktrace_default STREQUAL "Execinfo")
         include("${CMAKE_CURRENT_LIST_DIR}/CheckExecinfoBackend.cmake")
         eggs_stacktrace_check_execinfo_backend(EGGS_STACKTRACE_HAVE_EXECINFO)

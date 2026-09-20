@@ -95,8 +95,13 @@ std::string symbolize_description(void* address)
     int status = -1;
     char* demangled =
         abi::__cxa_demangle(info.dli_sname, nullptr, nullptr, &status);
-    std::string result =
-        (status == 0 && demangled) ? demangled : info.dli_sname;
+    std::string result;
+    try {
+        result = (status == 0 && demangled) ? demangled : info.dli_sname;
+    } catch (...) {
+        std::free(demangled);
+        throw;
+    }
     std::free(demangled);
     return result;
 }

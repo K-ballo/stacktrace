@@ -50,6 +50,7 @@ endif()
 # -- Exported names for each backend ------------------------------------------
 
 set(EGGS_STACKTRACE_BACKEND_EXPORT_null Null)
+set(EGGS_STACKTRACE_BACKEND_EXPORT_libbacktrace Libbacktrace)
 set(EGGS_STACKTRACE_BACKEND_EXPORT_execinfo Execinfo)
 
 # -- Common OBJECT library ----
@@ -137,16 +138,38 @@ endmacro()
 
 eggs_stacktrace_add_backend(null)
 
+include(CheckLibbacktraceBackend)
+eggs_stacktrace_check_libbacktrace_backend(EGGS_STACKTRACE_HAVE_LIBBACKTRACE)
+if(EGGS_STACKTRACE_HAVE_LIBBACKTRACE)
+    eggs_stacktrace_add_backend(
+        libbacktrace
+        _eggs_stacktrace_libbacktrace_support
+    )
+    # #include'd by absolute path (see stacktrace_libbacktrace.cpp) instead
+    # of adding its directory to the search path. PRIVATE: only this
+    # translation unit needs it, unlike the support library's link
+    # requirement above, which must stay PUBLIC for consumers.
+    target_compile_definitions(
+        _eggs_stacktrace_libbacktrace
+        PRIVATE
+            EGGS_STACKTRACE_BACKTRACE_INCLUDE_FILE="${EGGS_STACKTRACE_LIBBACKTRACE_HEADER}"
+    )
+endif()
+
 include(CheckExecinfoBackend)
 eggs_stacktrace_check_execinfo_backend(EGGS_STACKTRACE_HAVE_EXECINFO)
 if(EGGS_STACKTRACE_HAVE_EXECINFO)
-    eggs_stacktrace_add_backend(execinfo ${CMAKE_DL_LIBS})
+    eggs_stacktrace_add_backend(execinfo _eggs_stacktrace_execinfo_support)
 endif()
 
 # -- Main alias ----------------------------------------------------------------
 # Note: ALIAS cannot alias another ALIAS, so we alias the internal target name.
+# libbacktrace is preferred over execinfo: it additionally resolves source
+# file/line, which execinfo cannot provide.
 
-if(TARGET _eggs_stacktrace_execinfo)
+if(TARGET _eggs_stacktrace_libbacktrace)
+    set(EGGS_STACKTRACE_DEFAULT_BACKEND libbacktrace)
+elseif(TARGET _eggs_stacktrace_execinfo)
     set(EGGS_STACKTRACE_DEFAULT_BACKEND execinfo)
 else()
     set(EGGS_STACKTRACE_DEFAULT_BACKEND null)
@@ -192,6 +215,14 @@ if(ENABLE_INSTALL)
                 EXPORT EggsStacktraceTargets
                 ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
             )
+            # Referenced via the backend's PUBLIC link libraries; must be
+            # part of the same export set.
+            if(TARGET _eggs_stacktrace_${name}_support)
+                install(
+                    TARGETS _eggs_stacktrace_${name}_support
+                    EXPORT EggsStacktraceTargets
+                )
+            endif()
             if(MSVC)
                 install(
                     FILES
@@ -205,6 +236,7 @@ if(ENABLE_INSTALL)
     endmacro()
 
     eggs_stacktrace_install_backend(null)
+    eggs_stacktrace_install_backend(libbacktrace)
     eggs_stacktrace_install_backend(execinfo)
 
     install(
@@ -215,7 +247,9 @@ if(ENABLE_INSTALL)
     )
 
     install(
-        FILES cmake/CheckExecinfoBackend.cmake
+        FILES
+            cmake/CheckLibbacktraceBackend.cmake
+            cmake/CheckExecinfoBackend.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/eggs.stacktrace
     )
 

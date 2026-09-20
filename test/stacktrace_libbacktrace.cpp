@@ -14,10 +14,11 @@
 
 #include "support.hpp"
 
-// C linkage + noinline + default visibility gives a predictable unmangled
-// symbol that dladdr() can resolve via -rdynamic even under -fvisibility=hidden.
-extern "C" [[gnu::noinline, gnu::visibility("default")]]
-void eggs_stacktrace_execinfo_sentinel()
+// noinline ensures this function has its own frame in the trace.
+// No ENABLE_EXPORTS or visibility("default") needed: backtrace_syminfo reads
+// .symtab (static table), so hidden symbols are found without -rdynamic.
+[[gnu::noinline]]
+void eggs_stacktrace_libbacktrace_sentinel()
 {
     auto st = eggs::stacktrace::current(0);
     if (!EGGS_STACKTRACE_CHECK(!st.empty())) {
@@ -31,18 +32,23 @@ void eggs_stacktrace_execinfo_sentinel()
         EGGS_STACKTRACE_TRACE(desc);
     }
     if (!EGGS_STACKTRACE_CHECK(
-            desc.find("eggs_stacktrace_execinfo_sentinel") != std::string::npos
+            desc.find("eggs_stacktrace_libbacktrace_sentinel") !=
+            std::string::npos
         )) {
         EGGS_STACKTRACE_TRACE(desc);
     }
 
-    // execinfo provides no DWARF source info.
-    if (!EGGS_STACKTRACE_CHECK(st[0].source_file() == "")) {
+    // libbacktrace provides DWARF source info when debug symbols are present
+    // (i.e., in a Debug build). Skip these checks in Release/NDEBUG builds
+    // since the binary may be stripped.
+#ifndef NDEBUG
+    if (!EGGS_STACKTRACE_CHECK(!st[0].source_file().empty())) {
         EGGS_STACKTRACE_TRACE(st[0].source_file());
     }
-    if (!EGGS_STACKTRACE_CHECK(st[0].source_line() == 0u)) {
+    if (!EGGS_STACKTRACE_CHECK(st[0].source_line() != 0u)) {
         EGGS_STACKTRACE_TRACE(st[0].source_line());
     }
+#endif
 }
 
 int main()
@@ -70,22 +76,14 @@ int main()
         EGGS_STACKTRACE_TRACE(st_capped.size());
     }
 
-    // -- source_file and source_line are always empty / 0 ------------------------
+    // -- description and DWARF source info ---------------------------------------
 
-    for (auto const& e : st) {
-        if (!EGGS_STACKTRACE_CHECK(e.source_file() == "")) {
-            EGGS_STACKTRACE_TRACE(e.source_file());
-        }
-        if (!EGGS_STACKTRACE_CHECK(e.source_line() == 0u)) {
-            EGGS_STACKTRACE_TRACE(e.source_line());
-        }
-    }
-
-    // -- description resolves via dladdr + ENABLE_EXPORTS ------------------------
-
-    eggs_stacktrace_execinfo_sentinel();
+    eggs_stacktrace_libbacktrace_sentinel();
 
     // -- skip beyond the representable range returns empty, not a crash ---------
+    // Regression test: skip + 1 must not silently wrap around (or overflow the
+    // int passed to backtrace_simple) into a small/negative value that would
+    // yield an unskipped trace instead of an empty one.
 
     auto const st_max_skip =
         eggs::stacktrace::current(std::numeric_limits<std::size_t>::max());

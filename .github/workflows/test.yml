@@ -33,10 +33,10 @@ jobs:
           - { os: ubuntu-24.04, compiler: gcc-16, cxxstds: "11 14 17 20 23 26", preset: dev-gcc, cc: gcc-16, cxx: g++-16, packages: "gcc-16 g++-16", ppa: ubuntu-toolchain-r }
           # -- Linux / Clang ----------------------------------------------------
           - { os: ubuntu-24.04, compiler: clang-17, cxxstds: "11 14 17 20 23", preset: dev-clang, cc: clang-17, cxx: clang++-17, packages: "clang-17 clang-tools-17" }
-          - { os: ubuntu-24.04, compiler: clang-18, cxxstds: "11 14 17 20 23", preset: dev-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 clang-tools-18" }
+          - { os: ubuntu-24.04, compiler: clang-18, cxxstds: "11 14 17 20 23", preset: dev-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 clang-tools-18", cxx_flags: "--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/13" }
           - { os: ubuntu-24.04, compiler: clang-19, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-19, cxx: clang++-19, packages: "clang-19 clang-tools-19" }
           - { os: ubuntu-24.04, compiler: clang-20, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-20, cxx: clang++-20, packages: "clang-20 clang-tools-20", llvm_ver: "20" }
-          - { os: ubuntu-24.04, compiler: clang-22, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-22, cxx: clang++-22, packages: "clang-22 clang-tools-22", llvm_ver: "22" }
+          - { os: ubuntu-24.04, compiler: clang-22, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-22, cxx: clang++-22, packages: "clang-22 clang-tools-22 g++-16", llvm_ver: "22", ppa: ubuntu-toolchain-r, cxx_flags: "--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/16" }
           # -- Linux / Clang + libc++ -------------------------------------------
           - { os: ubuntu-24.04, compiler: clang-19-libcxx, cxxstds: "11 14 17 20 23 26", preset: dev-clang-libcxx, cc: clang-19, cxx: clang++-19, packages: "clang-19 clang-tools-19 libc++-19-dev libc++abi-19-dev" }
           - { os: ubuntu-24.04, compiler: clang-22-libcxx, cxxstds: "11 14 17 20 23 26", preset: dev-clang-libcxx, cc: clang-22, cxx: clang++-22, packages: "clang-22 clang-tools-22 libc++-22-dev libc++abi-22-dev", llvm_ver: "22" }
@@ -129,6 +129,7 @@ jobs:
           compiler: ${{ matrix.compiler }}
           cc: ${{ matrix.cc }}
           cxx: ${{ matrix.cxx }}
+          cxx_flags: ${{ matrix.cxx_flags }}
 
       - name: Build and test C++14
         id: build_test_cxx14
@@ -140,6 +141,7 @@ jobs:
           compiler: ${{ matrix.compiler }}
           cc: ${{ matrix.cc }}
           cxx: ${{ matrix.cxx }}
+          cxx_flags: ${{ matrix.cxx_flags }}
 
       - name: Build and test C++17
         id: build_test_cxx17
@@ -151,6 +153,7 @@ jobs:
           compiler: ${{ matrix.compiler }}
           cc: ${{ matrix.cc }}
           cxx: ${{ matrix.cxx }}
+          cxx_flags: ${{ matrix.cxx_flags }}
 
       - name: Build and test C++20
         id: build_test_cxx20
@@ -162,6 +165,7 @@ jobs:
           compiler: ${{ matrix.compiler }}
           cc: ${{ matrix.cc }}
           cxx: ${{ matrix.cxx }}
+          cxx_flags: ${{ matrix.cxx_flags }}
 
       - name: Build and test C++23
         id: build_test_cxx23
@@ -173,6 +177,7 @@ jobs:
           compiler: ${{ matrix.compiler }}
           cc: ${{ matrix.cc }}
           cxx: ${{ matrix.cxx }}
+          cxx_flags: ${{ matrix.cxx_flags }}
 
       - name: Build and test C++26
         id: build_test_cxx26
@@ -184,6 +189,7 @@ jobs:
           compiler: ${{ matrix.compiler }}
           cc: ${{ matrix.cc }}
           cxx: ${{ matrix.cxx }}
+          cxx_flags: ${{ matrix.cxx_flags }}
 
       - name: Upload test results
         id: upload_test_results

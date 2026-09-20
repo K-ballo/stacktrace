@@ -4,10 +4,20 @@ include("${CMAKE_CURRENT_LIST_DIR}/eggs.stacktrace-targets.cmake")
 
 # Create the canonical Eggs::Stacktrace alias for the configured default backend.
 if(NOT TARGET Eggs::Stacktrace)
+    set(_eggs_stacktrace_default @EGGS_STACKTRACE_DEFAULT_BACKEND_EXPORT@)
+    if(_eggs_stacktrace_default STREQUAL "Execinfo")
+        include("${CMAKE_CURRENT_LIST_DIR}/CheckExecinfoBackend.cmake")
+        eggs_stacktrace_check_execinfo_backend(EGGS_STACKTRACE_HAVE_EXECINFO)
+        if(NOT EGGS_STACKTRACE_HAVE_EXECINFO)
+            message(WARNING "eggs.stacktrace: falling back to the Null backend")
+            set(_eggs_stacktrace_default Null)
+        endif()
+    endif()
     add_library(
         Eggs::Stacktrace
-        ALIAS Eggs::Stacktrace::@EGGS_STACKTRACE_DEFAULT_BACKEND_EXPORT@
+        ALIAS Eggs::Stacktrace::${_eggs_stacktrace_default}
     )
+    unset(_eggs_stacktrace_default)
 endif()
 
 check_required_components(Eggs.Stacktrace)

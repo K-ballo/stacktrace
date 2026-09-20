@@ -15,10 +15,20 @@
 
 #include "detail/backend.hpp"
 
+#if defined(__clang__)
+#    define EGGS_STACKTRACE_NO_TAIL_CALLS __attribute__((disable_tail_calls))
+#elif defined(__GNUC__)
+#    define EGGS_STACKTRACE_NO_TAIL_CALLS \
+        __attribute__((optimize("no-optimize-sibling-calls")))
+#else
+#    define EGGS_STACKTRACE_NO_TAIL_CALLS
+#endif
+
 namespace eggs {
 
 // -- stacktrace::current --------------------------------------------------------
 
+EGGS_STACKTRACE_NO_TAIL_CALLS
 stacktrace stacktrace::current() noexcept
 {
     stacktrace st;
@@ -26,8 +36,11 @@ stacktrace stacktrace::current() noexcept
     return st;
 }
 
+EGGS_STACKTRACE_NO_TAIL_CALLS
 stacktrace stacktrace::current(size_type skip) noexcept
 {
+    if (skip == std::numeric_limits<size_type>::max()) return {};
+
     stacktrace st;
     detail::capture(
         st.frames_, skip + 1, std::numeric_limits<size_type>::max()
@@ -35,8 +48,11 @@ stacktrace stacktrace::current(size_type skip) noexcept
     return st;
 }
 
+EGGS_STACKTRACE_NO_TAIL_CALLS
 stacktrace stacktrace::current(size_type skip, size_type max_depth) noexcept
 {
+    if (skip == std::numeric_limits<size_type>::max()) return {};
+
     stacktrace st;
     detail::capture(st.frames_, skip + 1, max_depth);
     return st;

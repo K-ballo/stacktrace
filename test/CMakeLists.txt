@@ -67,3 +67,36 @@ endfunction()
 add_lib_test(stacktrace_entry)
 add_lib_test(stacktrace)
 add_lib_test(stacktrace_formatter)
+
+# -- execinfo backend test ------------------------------------------------------
+
+if(TARGET Eggs::Stacktrace::Execinfo)
+    add_executable(
+        eggs.stacktrace.test.stacktrace_execinfo
+        stacktrace_execinfo.cpp
+    )
+    target_sources(
+        eggs.stacktrace.test.stacktrace_execinfo
+        PRIVATE
+            FILE_SET private_headers
+                TYPE HEADERS
+                BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+                FILES support.hpp
+    )
+    target_link_libraries(
+        eggs.stacktrace.test.stacktrace_execinfo
+        PRIVATE Eggs::Stacktrace::Execinfo
+    )
+    set_target_properties(
+        eggs.stacktrace.test.stacktrace_execinfo
+        PROPERTIES ENABLE_EXPORTS ON
+    )
+    add_test(
+        NAME eggs.stacktrace.stacktrace_execinfo
+        COMMAND eggs.stacktrace.test.stacktrace_execinfo
+    )
+    set_tests_properties(
+        eggs.stacktrace.stacktrace_execinfo
+        PROPERTIES LABELS "unit"
+    )
+endif()

@@ -10,6 +10,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 
 // A minimal, always-on check for lib tests, which must not depend on the
 // library they are testing. Unlike an assert, it does not abort on
@@ -33,6 +34,29 @@ int counters<T>::passed = 0;
 template <typename T>
 int counters<T>::failed = 0;
 
+inline std::string stringize(bool v)
+{
+    return v ? "true" : "false";
+}
+
+inline std::string stringize(std::string const& v)
+{
+    return "\"" + v + "\"";
+}
+
+inline std::string stringize(void const* v)
+{
+    char buf[2 + sizeof(void*) * 2 + 1];
+    std::snprintf(buf, sizeof(buf), "%p", v);
+    return buf;
+}
+
+template <typename T>
+inline auto stringize(T const& v) -> decltype(std::to_string(v))
+{
+    return std::to_string(v);
+}
+
 inline int report()
 {
     std::fprintf(
@@ -41,7 +65,7 @@ inline int report()
     return counters<>::failed != 0 ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
-inline void check(bool cond, char const* file, int line, char const* expr)
+inline bool check(bool cond, char const* file, int line, char const* expr)
 {
     if (cond) {
         ++counters<>::passed;
@@ -49,6 +73,7 @@ inline void check(bool cond, char const* file, int line, char const* expr)
         std::fprintf(stderr, "%s:%d: check failed: %s\n", file, line, expr);
         ++counters<>::failed;
     }
+    return cond;
 }
 
 } // namespace test_support
@@ -57,4 +82,11 @@ inline void check(bool cond, char const* file, int line, char const* expr)
 #define EGGS_STACKTRACE_CHECK(...)                                       \
     eggs::test_support::check(                                           \
         static_cast<bool>(__VA_ARGS__), __FILE__, __LINE__, #__VA_ARGS__ \
+    )
+
+// Prints the stringified expression alongside its value
+#define EGGS_STACKTRACE_TRACE(...)                         \
+    std::fprintf(                                          \
+        stderr, "  %s: %s\n", #__VA_ARGS__,                \
+        eggs::test_support::stringize(__VA_ARGS__).c_str() \
     )

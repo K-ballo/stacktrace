@@ -32,14 +32,14 @@ jobs:
           - { os: ubuntu-24.04, compiler: gcc-15, cxxstds: "11 14 17 20 23 26", preset: dev-gcc, cc: gcc-15, cxx: g++-15, packages: "gcc-15 g++-15", ppa: ubuntu-toolchain-r }
           - { os: ubuntu-24.04, compiler: gcc-16, cxxstds: "11 14 17 20 23 26", preset: dev-gcc, cc: gcc-16, cxx: g++-16, packages: "gcc-16 g++-16", ppa: ubuntu-toolchain-r }
           # -- Linux / Clang ----------------------------------------------------
-          - { os: ubuntu-24.04, compiler: clang-17, cxxstds: "11 14 17 20 23", preset: dev-clang, cc: clang-17, cxx: clang++-17, packages: "clang-17 clang-tools-17" }
-          - { os: ubuntu-24.04, compiler: clang-18, cxxstds: "11 14 17 20 23", preset: dev-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 clang-tools-18" }
-          - { os: ubuntu-24.04, compiler: clang-19, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-19, cxx: clang++-19, packages: "clang-19 clang-tools-19" }
-          - { os: ubuntu-24.04, compiler: clang-20, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-20, cxx: clang++-20, packages: "clang-20 clang-tools-20", llvm_ver: "20" }
-          - { os: ubuntu-24.04, compiler: clang-22, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-22, cxx: clang++-22, packages: "clang-22 clang-tools-22", llvm_ver: "22" }
+          - { os: ubuntu-24.04, compiler: clang-17, cxxstds: "11 14 17 20 23", preset: dev-clang, cc: clang-17, cxx: clang++-17, packages: "clang-17 clang-tools-17", gcc_toolchain: "13" }
+          - { os: ubuntu-24.04, compiler: clang-18, cxxstds: "11 14 17 20 23", preset: dev-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 clang-tools-18", gcc_toolchain: "13" }
+          - { os: ubuntu-24.04, compiler: clang-19, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-19, cxx: clang++-19, packages: "clang-19 clang-tools-19 g++-14", gcc_toolchain: "14" }
+          - { os: ubuntu-24.04, compiler: clang-20, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-20, cxx: clang++-20, packages: "clang-20 clang-tools-20 g++-14", llvm_ver: "20", gcc_toolchain: "14" }
+          - { os: ubuntu-24.04, compiler: clang-22, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-22, cxx: clang++-22, packages: "clang-22 clang-tools-22 g++-16", llvm_ver: "22", ppa: ubuntu-toolchain-r, gcc_toolchain: "16" }
           # -- Linux / Clang + libc++ -------------------------------------------
-          - { os: ubuntu-24.04, compiler: clang-19-libcxx, cxxstds: "11 14 17 20 23 26", preset: dev-clang-libcxx, cc: clang-19, cxx: clang++-19, packages: "clang-19 clang-tools-19 libc++-19-dev libc++abi-19-dev" }
-          - { os: ubuntu-24.04, compiler: clang-22-libcxx, cxxstds: "11 14 17 20 23 26", preset: dev-clang-libcxx, cc: clang-22, cxx: clang++-22, packages: "clang-22 clang-tools-22 libc++-22-dev libc++abi-22-dev", llvm_ver: "22" }
+          - { os: ubuntu-24.04, compiler: clang-19-libcxx, cxxstds: "11 14 17 20 23 26", preset: dev-clang-libcxx, cc: clang-19, cxx: clang++-19, packages: "clang-19 clang-tools-19 libc++-19-dev libc++abi-19-dev g++-14", gcc_toolchain: "14" }
+          - { os: ubuntu-24.04, compiler: clang-22-libcxx, cxxstds: "11 14 17 20 23 26", preset: dev-clang-libcxx, cc: clang-22, cxx: clang++-22, packages: "clang-22 clang-tools-22 libc++-22-dev libc++abi-22-dev g++-16", llvm_ver: "22", ppa: ubuntu-toolchain-r, gcc_toolchain: "16" }
           # -- Windows / MSVC ---------------------------------------------------
           - { os: windows-2022, compiler: msvc-2022, cxxstds: "14 17 20 23", preset: dev-msvc }
           - { os: windows-2025-vs2026, compiler: msvc-2026, cxxstds: "14 17 20 23", preset: dev-msvc }
@@ -129,6 +129,7 @@ jobs:
           compiler: ${{ matrix.compiler }}
           cc: ${{ matrix.cc }}
           cxx: ${{ matrix.cxx }}
+          gcc_toolchain: ${{ matrix.gcc_toolchain }}
 
       - name: Build and test C++14
         id: build_test_cxx14
@@ -140,6 +141,7 @@ jobs:
           compiler: ${{ matrix.compiler }}
           cc: ${{ matrix.cc }}
           cxx: ${{ matrix.cxx }}
+          gcc_toolchain: ${{ matrix.gcc_toolchain }}
 
       - name: Build and test C++17
         id: build_test_cxx17
@@ -151,6 +153,7 @@ jobs:
           compiler: ${{ matrix.compiler }}
           cc: ${{ matrix.cc }}
           cxx: ${{ matrix.cxx }}
+          gcc_toolchain: ${{ matrix.gcc_toolchain }}
 
       - name: Build and test C++20
         id: build_test_cxx20
@@ -162,6 +165,7 @@ jobs:
           compiler: ${{ matrix.compiler }}
           cc: ${{ matrix.cc }}
           cxx: ${{ matrix.cxx }}
+          gcc_toolchain: ${{ matrix.gcc_toolchain }}
 
       - name: Build and test C++23
         id: build_test_cxx23
@@ -173,6 +177,7 @@ jobs:
           compiler: ${{ matrix.compiler }}
           cc: ${{ matrix.cc }}
           cxx: ${{ matrix.cxx }}
+          gcc_toolchain: ${{ matrix.gcc_toolchain }}
 
       - name: Build and test C++26
         id: build_test_cxx26
@@ -184,6 +189,7 @@ jobs:
           compiler: ${{ matrix.compiler }}
           cc: ${{ matrix.cc }}
           cxx: ${{ matrix.cxx }}
+          gcc_toolchain: ${{ matrix.gcc_toolchain }}
 
       - name: Upload test results
         id: upload_test_results

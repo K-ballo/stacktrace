@@ -68,6 +68,35 @@ add_lib_test(stacktrace_entry)
 add_lib_test(stacktrace)
 add_lib_test(stacktrace_formatter)
 
+# -- libbacktrace backend test ---------------------------------------------------
+
+if(TARGET Eggs::Stacktrace::Libbacktrace)
+    add_executable(
+        eggs.stacktrace.test.stacktrace_libbacktrace
+        stacktrace_libbacktrace.cpp
+    )
+    target_sources(
+        eggs.stacktrace.test.stacktrace_libbacktrace
+        PRIVATE
+            FILE_SET private_headers
+                TYPE HEADERS
+                BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+                FILES support.hpp
+    )
+    target_link_libraries(
+        eggs.stacktrace.test.stacktrace_libbacktrace
+        PRIVATE Eggs::Stacktrace::Libbacktrace
+    )
+    add_test(
+        NAME eggs.stacktrace.stacktrace_libbacktrace
+        COMMAND eggs.stacktrace.test.stacktrace_libbacktrace
+    )
+    set_tests_properties(
+        eggs.stacktrace.stacktrace_libbacktrace
+        PROPERTIES LABELS "unit"
+    )
+endif()
+
 # -- execinfo backend test ------------------------------------------------------
 
 if(TARGET Eggs::Stacktrace::Execinfo)

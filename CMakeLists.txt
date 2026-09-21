@@ -51,6 +51,7 @@ endif()
 
 set(EGGS_STACKTRACE_BACKEND_EXPORT_null Null)
 set(EGGS_STACKTRACE_BACKEND_EXPORT_execinfo Execinfo)
+set(EGGS_STACKTRACE_BACKEND_EXPORT_libbacktrace Libbacktrace)
 
 # -- Common OBJECT library ----
 
@@ -143,10 +144,26 @@ if(EGGS_STACKTRACE_HAVE_EXECINFO)
     eggs_stacktrace_add_backend(execinfo _eggs_stacktrace_execinfo_support)
 endif()
 
+include(CheckLibbacktraceBackend)
+eggs_stacktrace_check_libbacktrace_backend(EGGS_STACKTRACE_HAVE_LIBBACKTRACE)
+if(EGGS_STACKTRACE_HAVE_LIBBACKTRACE)
+    eggs_stacktrace_add_backend(
+        libbacktrace
+        _eggs_stacktrace_libbacktrace_support
+    )
+    target_compile_definitions(
+        _eggs_stacktrace_libbacktrace
+        PRIVATE
+            EGGS_STACKTRACE_BACKTRACE_INCLUDE_FILE="${EGGS_STACKTRACE_LIBBACKTRACE_HEADER}"
+    )
+endif()
+
 # -- Main alias ----------------------------------------------------------------
 # Note: ALIAS cannot alias another ALIAS, so we alias the internal target name.
 
-if(TARGET _eggs_stacktrace_execinfo)
+if(TARGET _eggs_stacktrace_libbacktrace)
+    set(EGGS_STACKTRACE_DEFAULT_BACKEND libbacktrace)
+elseif(TARGET _eggs_stacktrace_execinfo)
     set(EGGS_STACKTRACE_DEFAULT_BACKEND execinfo)
 else()
     set(EGGS_STACKTRACE_DEFAULT_BACKEND null)
@@ -185,43 +202,56 @@ if(ENABLE_INSTALL)
 
     # -- Backend install helper ------------------------------------------------
 
-    macro(eggs_stacktrace_install_backend name)
-        if(TARGET _eggs_stacktrace_${name})
-            install(
-                TARGETS _eggs_stacktrace_${name}
-                EXPORT EggsStacktraceTargets
-                ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-            )
-            if(TARGET _eggs_stacktrace_${name}_support)
-                install(
-                    TARGETS _eggs_stacktrace_${name}_support
-                    EXPORT EggsStacktraceTargets
-                )
-            endif()
-            if(MSVC)
-                install(
-                    FILES
-                        "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/eggs_stacktrace_${name}.pdb"
-                    DESTINATION ${CMAKE_INSTALL_LIBDIR}
-                    CONFIGURATIONS Debug RelWithDebInfo
-                    OPTIONAL
-                )
-            endif()
+    function(eggs_stacktrace_install_backend name)
+        if(NOT TARGET _eggs_stacktrace_${name})
+            return()
         endif()
-    endmacro()
+
+        set(_export_set EggsStacktraceTargets)
+        set(_export_file eggs.stacktrace-targets.cmake)
+        if(NOT "${name}" STREQUAL "null")
+            set(_export_set
+                "EggsStacktrace${EGGS_STACKTRACE_BACKEND_EXPORT_${name}}Targets"
+            )
+            set(_export_file "eggs.stacktrace-${name}-targets.cmake")
+        endif()
+        install(
+            TARGETS _eggs_stacktrace_${name}
+            EXPORT ${_export_set}
+            ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        )
+        if(TARGET _eggs_stacktrace_${name}_support)
+            install(
+                TARGETS _eggs_stacktrace_${name}_support
+                EXPORT ${_export_set}
+            )
+        endif()
+        if(MSVC)
+            install(
+                FILES
+                    "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/eggs_stacktrace_${name}.pdb"
+                DESTINATION ${CMAKE_INSTALL_LIBDIR}
+                CONFIGURATIONS Debug RelWithDebInfo
+                OPTIONAL
+            )
+        endif()
+        install(
+            EXPORT ${_export_set}
+            NAMESPACE Eggs::
+            FILE ${_export_file}
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/eggs.stacktrace
+        )
+    endfunction()
 
     eggs_stacktrace_install_backend(null)
     eggs_stacktrace_install_backend(execinfo)
+    eggs_stacktrace_install_backend(libbacktrace)
 
     install(
-        EXPORT EggsStacktraceTargets
-        NAMESPACE Eggs::
-        FILE eggs.stacktrace-targets.cmake
-        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/eggs.stacktrace
-    )
-
-    install(
-        FILES cmake/CheckExecinfoBackend.cmake
+        FILES
+            cmake/CheckExecinfoBackend.cmake
+            cmake/CheckLibbacktraceBackend.cmake
+            cmake/FindLibbacktrace.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/eggs.stacktrace
     )
 

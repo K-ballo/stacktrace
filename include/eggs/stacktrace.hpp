@@ -26,7 +26,7 @@
 #endif
 
 #include <eggs/stacktrace/detail/nodiscard.hpp>
-#include <eggs/stacktrace/pin_frame.hpp>
+#include <eggs/stacktrace/pin_frame.hpp> // IWYU pragma: export
 
 namespace eggs {
 

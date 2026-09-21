@@ -41,6 +41,24 @@ void foo()
 }
 ```
 
+## Pinning Frames
+
+Under optimisation, the compiler may inline a function into its caller or
+eliminate a tail call, causing its frame to be missing from a captured
+stacktrace. `EGGS_STACKTRACE_PIN_FRAME` is a best-effort attribute that keeps
+a function's own frame in stacktraces captured from within it or a callee:
+
+```cpp
+EGGS_STACKTRACE_PIN_FRAME void handle_request()
+{
+    auto st = eggs::stacktrace::current();
+    // ...
+}
+```
+
+It is best effort, not a guarantee - see the doc comment in
+`eggs/stacktrace/pin_frame.hpp` for what it does and does not cover.
+
 ## CMake Integration
 
 ```cmake

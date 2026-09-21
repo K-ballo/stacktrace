@@ -18,15 +18,6 @@
 
 #include <iostream>
 
-// EGGS_STACKTRACE_NOINLINE - suppresses inlining on a function definition.
-#ifndef EGGS_STACKTRACE_NOINLINE
-#    ifdef _MSC_VER
-#        define EGGS_STACKTRACE_NOINLINE __declspec(noinline)
-#    else
-#        define EGGS_STACKTRACE_NOINLINE [[gnu::noinline]]
-#    endif
-#endif
-
 #ifdef __cpp_lib_format
 #    include <format>
 #endif
@@ -37,9 +28,10 @@ namespace example {
 
 namespace {
 
-// Pinned frames - the compiler is not allowed to merge these into callers.
+// Pinned frames - kept out of their callers, best effort (see
+// EGGS_STACKTRACE_PIN_FRAME).
 
-EGGS_STACKTRACE_NOINLINE eggs::stacktrace innermost()
+EGGS_STACKTRACE_PIN_FRAME eggs::stacktrace innermost()
 {
     return eggs::stacktrace::current();
 }
@@ -54,7 +46,7 @@ eggs::stacktrace adapt()
 
 } // namespace
 
-EGGS_STACKTRACE_NOINLINE eggs::stacktrace middle()
+EGGS_STACKTRACE_PIN_FRAME eggs::stacktrace middle()
 {
     return adapt();
 }
@@ -68,7 +60,7 @@ eggs::stacktrace dispatch()
 }
 
 template <int N>
-EGGS_STACKTRACE_NOINLINE eggs::stacktrace outer()
+EGGS_STACKTRACE_PIN_FRAME eggs::stacktrace outer()
 {
     return dispatch();
 }

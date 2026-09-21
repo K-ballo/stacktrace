@@ -26,6 +26,7 @@
 #endif
 
 #include <eggs/stacktrace/detail/nodiscard.hpp>
+#include <eggs/stacktrace/pin_frame.hpp>
 
 namespace eggs {
 

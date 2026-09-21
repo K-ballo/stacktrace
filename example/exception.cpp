@@ -17,15 +17,6 @@
 #include <stdexcept>
 #include <string>
 
-// EGGS_STACKTRACE_NOINLINE - suppresses inlining on a function definition.
-#ifndef EGGS_STACKTRACE_NOINLINE
-#    ifdef _MSC_VER
-#        define EGGS_STACKTRACE_NOINLINE __declspec(noinline)
-#    else
-#        define EGGS_STACKTRACE_NOINLINE [[gnu::noinline]]
-#    endif
-#endif
-
 #ifdef __cpp_lib_format
 #    include <format>
 #endif
@@ -58,7 +49,7 @@ namespace example {
 
 namespace {
 
-[[noreturn]] EGGS_STACKTRACE_NOINLINE void innermost()
+[[noreturn]] EGGS_STACKTRACE_PIN_FRAME void innermost()
 {
     throw traced_error("something went wrong");
 }
@@ -76,7 +67,7 @@ namespace {
 [[noreturn]] void middle();
 [[noreturn]] void dispatch();
 
-[[noreturn]] EGGS_STACKTRACE_NOINLINE void middle()
+[[noreturn]] EGGS_STACKTRACE_PIN_FRAME void middle()
 {
     adapt();
 }
@@ -90,7 +81,7 @@ namespace {
 }
 
 template <int N>
-EGGS_STACKTRACE_NOINLINE void outer()
+EGGS_STACKTRACE_PIN_FRAME void outer()
 {
     dispatch();
 }

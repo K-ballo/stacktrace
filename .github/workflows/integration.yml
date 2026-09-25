@@ -22,22 +22,48 @@ on:
   # TODO: temporary, remove before merging to main.
   push:
     branches: [ feature/integration ]
+    # Keep in sync with AFFECTS_ALL in test/integration/select_jobs.py.
+    paths:
+      - include/**
+      - src/**
+      - cmake/**
+      - CMakeLists.txt
+      - CMakePresets.json
+      - test/integration/**
+      - .github/workflows/integration.yml
 
 jobs:
+  # Selects the toolchains, and the backends within each, affected by a push.
+  # See test/integration/select_jobs.py.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.select.outputs.matrix }}
+      any: ${{ steps.select.outputs.any }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Select toolchains and backends
+        id: select
+        # Only pushes have a base; everything else runs everything.
+        run: >-
+          python3 test/integration/select_jobs.py
+          --base "${{ github.event_name == 'push' && github.event.before || '' }}"
+          --head "${{ github.sha }}"
+
   matrix:
     name: ${{ matrix.os }} / ${{ matrix.compiler }}
+    needs: changes
+    if: needs.changes.outputs.any == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 180
 
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - { os: ubuntu-24.04, compiler: gcc-16, toolchain: gcc, preset: dev-gcc, cc: gcc-16, cxx: g++-16, packages: "gcc-16 g++-16 lld", ppa: ubuntu-toolchain-r, lld_flags: "-fuse-ld=lld" }
-          - { os: ubuntu-24.04, compiler: clang-22, toolchain: clang, preset: dev-clang, cc: clang-22, cxx: clang++-22, packages: "clang-22 lld-22 llvm-22 llvm-22-linker-tools g++-16", llvm_ver: "22", ppa: ubuntu-toolchain-r, gcc_toolchain: "16", lld_flags: "--ld-path=/usr/bin/ld.lld-22" }
-          - { os: windows-2025-vs2026, compiler: msvc-2026, toolchain: msvc, preset: dev-msvc, cxx: cl }
-          - { os: windows-2025-vs2026, compiler: clang-cl-20, toolchain: clang-cl, preset: dev-clang-cl, cxx: clang-cl }
-          - { os: macos-15, compiler: apple-clang-16, toolchain: apple-clang, preset: dev-clang, cxx: clang++ }
+      matrix: ${{ fromJSON(needs.changes.outputs.matrix) }}
 
     steps:
       - uses: actions/checkout@v5
@@ -108,17 +134,13 @@ jobs:
       - name: Run integration matrix
         shell: bash
         run: |
-          extra_args=()
-          if [ -n "${{ matrix.lld_flags }}" ]; then
-            extra_args+=(--lld-flags="${{ matrix.lld_flags }}")
-          fi
           ${{ runner.os == 'Windows' && 'python' || 'python3' }} test/integration/run_matrix.py \
             --toolchain ${{ matrix.toolchain }} \
             --cxx ${{ matrix.cxx }} \
             --prefix "${{ runner.temp }}/eggs-stacktrace-install" \
             --out "${{ runner.temp }}/integration" \
             --filter "${{ inputs.filter }}" \
-            "${extra_args[@]}"
+            --backends "${{ matrix.run_backends }}"
 
       - name: Upload traces
         if: always()

@@ -12,7 +12,7 @@ affect a stacktrace, and collect the traces.
 
 The consumer is built against an installed Release package once per
 combination of compile/link flags. Each build is then run under several
-post-link variants (as built, stripped, PDB moved away, ...), once per
+post-link variants (as built, stripped, PDB hidden, ...), once per
 installed backend.
 
 Checks are minimal: a run fails only if the combination does not build, the
@@ -58,7 +58,6 @@ FAILED_STATUSES = {"configure-failed", "build-failed", "check-failed",
 class Value:
     name: str
     cxx: tuple = ()  # compile flags
-    exe_cxx: tuple = ()  # compile flags, code linked into executables only
     link: tuple = ()  # link flags, every binary
     exe_link: tuple = ()  # link flags, executables only
     cmake: tuple = ()  # extra -D arguments
@@ -67,45 +66,32 @@ class Value:
 # -- Axes ----------------------------------------------------------------------
 # Each family declares its axes, the rules that prune meaningless
 # combinations, and the post-link variants that apply to a combination.
+#
+# Only flags and variants that were seen to change a trace are kept. Trimmed
+# after producing traces identical to a kept one (modulo addresses):
+#   gnu:   -fomit-frame-pointer, -fPIE/-no-pie, lld, -g1, -gsplit-dwarf, -gz,
+#          debuglink (== as-built), LTO with clang
+#   msvc:  /Zi (== /Z7), exe moved away from its PDB (== as-built),
+#          /OPT:ICF and /INCREMENTAL with clang-cl
+#   apple: every debug-info flag and variant (execinfo reads no DWARF), LTO
+
+LTO = Value("lto", cmake=("-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON",))
 
 
 def gnu_axes(args):
     return {
         "opt": [Value("O0", cxx=("-O0",)), Value("O3", cxx=("-O3",))],
-        "debug": [
-            Value("g0", cxx=("-g0",)),
-            Value("g1", cxx=("-g1",)),
-            Value("g", cxx=("-g",)),
-            Value("gsplit", cxx=("-g", "-gsplit-dwarf")),
-            Value("gz", cxx=("-g", "-gz"), link=("-gz",)),
-        ],
-        "fp": [
-            Value("fp", cxx=("-fno-omit-frame-pointer",)),
-            Value("nofp", cxx=("-fomit-frame-pointer",)),
-        ],
-        "pie": [
-            Value("pie", exe_cxx=("-fPIE",), exe_link=("-pie",)),
-            Value("nopie", exe_cxx=("-fno-pie",), exe_link=("-no-pie",)),
-        ],
+        "debug": [Value("g0", cxx=("-g0",)), Value("g", cxx=("-g",))],
         "exports": [
             Value("rdynamic", exe_link=("-rdynamic",)),
             Value("nordynamic"),
         ],
-        "ld": [Value("ld")]
-        + ([Value("lld", link=tuple(shlex.split(args.lld_flags)))]
-           if args.lld_flags else []),
-        "lto": [
-            Value("nolto"),
-            Value("lto", cmake=("-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON",)),
-        ],
+        "lto": [Value("nolto"), LTO],
     }
 
 
 def gnu_valid(args, c):
-    if c["opt"] == "O0" and (c["fp"] == "nofp" or c["lto"] == "lto"):
-        return False
-    # lld cannot load GCC's LTO plugin.
-    if args.toolchain == "gcc" and c["lto"] == "lto" and c["ld"] == "lld":
+    if c["lto"] == "lto" and (c["opt"] == "O0" or args.toolchain == "clang"):
         return False
     return True
 
@@ -113,39 +99,28 @@ def gnu_valid(args, c):
 def gnu_variants(c):
     if c["debug"] == "g0":
         return ["as-built", "strip-all"]
-    return ["as-built", "strip-debug", "strip-all", "debuglink"]
+    return ["as-built", "strip-debug", "strip-all"]
 
 
 def apple_axes(args):
-    return {
-        "opt": [Value("O0", cxx=("-O0",)), Value("O3", cxx=("-O3",))],
-        "debug": [Value("g0", cxx=("-g0",)), Value("g", cxx=("-g",))],
-        "lto": [
-            Value("nolto"),
-            Value("lto", cmake=("-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON",)),
-        ],
-    }
+    return {"opt": [Value("O0", cxx=("-O0",)), Value("O3", cxx=("-O3",))]}
 
 
 def apple_valid(args, c):
-    return not (c["opt"] == "O0" and c["lto"] == "lto")
+    return True
 
 
 def apple_variants(c):
-    if c["debug"] == "g0":
-        return ["as-built"]
-    return ["as-built", "no-objs", "dsym"]
+    return ["as-built"]
 
 
 def msvc_axes(args):
-    fmt = "-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT="
     inline = ("/Ob3",) if args.toolchain == "msvc" else ()
     return {
         "opt": [Value("Od", cxx=("/Od",)), Value("O2", cxx=("/O2",) + inline)],
         "debug": [
             Value("nodi"),
-            Value("Z7", cmake=(fmt + "Embedded",)),
-            Value("Zi", cmake=(fmt + "ProgramDatabase",)),
+            Value("Z7", cmake=("-DCMAKE_MSVC_DEBUG_INFORMATION_FORMAT=Embedded",)),
         ],
         "pdb": [Value("nopdb"), Value("pdb", link=("/DEBUG:FULL",))],
         "icf": [
@@ -156,18 +131,16 @@ def msvc_axes(args):
             Value("noinc", link=("/INCREMENTAL:NO",)),
             Value("inc", link=("/INCREMENTAL",)),
         ],
-        "lto": [
-            Value("nolto"),
-            Value("lto", cmake=("-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON",)),
-        ],
+        "lto": [Value("nolto"), LTO],
     }
 
 
 def msvc_valid(args, c):
     if c["opt"] == "Od" and c["lto"] == "lto":
         return False
-    # clang-cl treats /Zi as /Z7.
-    if args.toolchain == "clang-cl" and c["debug"] == "Zi":
+    if args.toolchain == "clang-cl" and (
+        c["icf"] == "noicf" or c["incremental"] == "inc"
+    ):
         return False
     # Incremental linking needs /DEBUG and is incompatible with /OPT.
     if c["incremental"] == "inc" and (c["pdb"] != "pdb" or c["icf"] == "icf"):
@@ -178,7 +151,7 @@ def msvc_valid(args, c):
 def msvc_variants(c):
     if c["pdb"] == "nopdb":
         return ["as-built"]
-    return ["as-built", "moved", "no-pdb"]
+    return ["as-built", "no-pdb"]
 
 
 FAMILY_RULES = {
@@ -221,9 +194,7 @@ def copy_binaries(src, dst, exclude_suffixes):
     for f in src.iterdir():
         if f.is_file() and f.suffix.lower() not in exclude_suffixes:
             shutil.copy2(f, dst / f.name)
-    # Split DWARF objects (e.g. from LTO) are not binaries to post-process.
-    return [f for f in dst.iterdir()
-            if f.is_file() and f.suffix != ".dwo" and is_binary(f)]
+    return [f for f in dst.iterdir() if f.is_file() and is_binary(f)]
 
 
 @contextlib.contextmanager
@@ -255,35 +226,21 @@ def variant_dir(args, family, variant, build_dir):
 
     dst = build_dir / "variants" / variant
     if family == "gnu":
-        for f in copy_binaries(bin_dir, dst, {".debug"}):
+        for f in copy_binaries(bin_dir, dst, set()):
             if variant == "strip-debug":
                 tool([args.strip, "--strip-debug", f.name], cwd=dst)
             elif variant == "strip-all":
                 tool([args.strip, "--strip-all", f.name], cwd=dst)
-            elif variant == "debuglink":
-                debug = f.name + ".debug"
-                tool([args.objcopy, "--only-keep-debug", f.name, debug],
-                     cwd=dst)
-                tool([args.strip, "--strip-debug", f.name], cwd=dst)
-                tool([args.objcopy, f"--add-gnu-debuglink={debug}", f.name],
-                     cwd=dst)
         yield dst
-    elif family == "apple":
-        # Without a dSYM, DWARF is only in the object files (and archives)
-        # the executable's debug map points back into.
-        for f in copy_binaries(bin_dir, dst, set()):
-            if variant == "dsym":
-                tool(["dsymutil", f.name], cwd=dst)
-        objects = list(build_dir.rglob("*.o")) + list(build_dir.rglob("*.a"))
-        with hidden(objects):
-            yield dst
-    elif family == "msvc":
-        # PDBs stay behind; DbgHelp can still find them through the absolute
-        # path recorded in each binary, unless they are hidden too.
+    elif family == "msvc" and variant == "no-pdb":
+        # Copied away from their PDBs, which are also hidden, so that DbgHelp
+        # finds them neither next to the binaries nor through the absolute
+        # path recorded in each binary.
         copy_binaries(bin_dir, dst, {".pdb", ".ilk", ".lib", ".exp"})
-        pdbs = list(bin_dir.glob("*.pdb")) if variant == "no-pdb" else []
-        with hidden(pdbs):
+        with hidden(list(bin_dir.glob("*.pdb"))):
             yield dst
+    else:
+        raise ValueError(f"unknown variant {variant} for {family}")
 
 
 # -- Running -------------------------------------------------------------------
@@ -330,6 +287,10 @@ def run_logged(cmd, log, cwd=None):
     return r.returncode == 0, output
 
 
+def app_backend(app):
+    return app[len("integration_app_"):].removesuffix(".exe")
+
+
 def run_combo(args, family, combo):
     name = combo_name(combo)
     build_dir = args.out / "builds" / name
@@ -348,7 +309,6 @@ def run_combo(args, family, combo):
         "-DCMAKE_BUILD_TYPE=Integration",
         f"-DCMAKE_PREFIX_PATH={args.prefix}",
         f"-DCMAKE_CXX_FLAGS_INTEGRATION={flags('cxx')}",
-        f"-DINTEGRATION_EXE_CXX_FLAGS={flags('exe_cxx')}",
         f"-DCMAKE_EXE_LINKER_FLAGS_INTEGRATION={exe_link}",
         f"-DCMAKE_SHARED_LINKER_FLAGS_INTEGRATION={link}",
         f"-DCMAKE_MODULE_LINKER_FLAGS_INTEGRATION={link}",
@@ -377,6 +337,7 @@ def run_combo(args, family, combo):
         f.name for f in (build_dir / "bin").iterdir()
         if f.is_file() and f.name.startswith("integration_app_")
         and f.suffix in ("", ".exe")
+        and (not args.backends or app_backend(f.name) in args.backends)
     )
     rows = []
     _, _, variants_fn = FAMILY_RULES[family]
@@ -385,7 +346,7 @@ def run_combo(args, family, combo):
         try:
             with variant_dir(args, family, variant, build_dir) as run_dir:
                 for app in apps:
-                    backend = app[len("integration_app_"):].removesuffix(".exe")
+                    backend = app_backend(app)
                     log = trace_dir / variant / f"{backend}.txt"
                     result = run_app(args, app, run_dir, log)
                     rows.append(dict(row, variant=variant, backend=backend,
@@ -443,10 +404,9 @@ def main() -> int:
     parser.add_argument("--out", type=pathlib.Path, default=pathlib.Path(
                         "build/integration"))
     parser.add_argument("--cxx", help="C++ compiler")
-    parser.add_argument("--lld-flags",
-                        help="flags selecting lld; enables the `ld` axis")
+    parser.add_argument("--backends", default="",
+                        help="space-separated backends to run; empty for all")
     parser.add_argument("--strip", default="strip")
-    parser.add_argument("--objcopy", default="objcopy")
     parser.add_argument("--filter", default="",
                         help="regex; only combinations whose name matches")
     parser.add_argument("--jobs", type=int,
@@ -460,6 +420,7 @@ def main() -> int:
                         help="list combinations and exit")
     args = parser.parse_args()
 
+    args.backends = set(args.backends.split())
     family = FAMILIES[args.toolchain]
     pattern = re.compile(args.filter)
     combos = [c for c in combinations(args, family)

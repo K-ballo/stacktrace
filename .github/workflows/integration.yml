@@ -1,0 +1,133 @@
+# Eggs.Stacktrace
+#
+# Copyright (c) 2026 Agustin Berge
+#
+# Distributed under the Boost Software License, Version 1.0.
+# See accompanying file LICENSE.txt or copy at
+# http://www.boost.org/LICENSE_1_0.txt
+
+# Builds test/integration against an installed Release package under every
+# combination of flags that can affect a stacktrace, and uploads the traces.
+# See test/integration/run_matrix.py.
+
+name: integration
+
+on:
+  workflow_dispatch:
+    inputs:
+      filter:
+        description: Regex over combination names (e.g. "^O3-g-"); empty runs all
+        required: false
+        default: ""
+  # TODO: temporary, remove before merging to main.
+  push:
+    branches: [ feature/integration ]
+
+jobs:
+  matrix:
+    name: ${{ matrix.os }} / ${{ matrix.compiler }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 180
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-24.04, compiler: gcc-16, toolchain: gcc, preset: dev-gcc, cc: gcc-16, cxx: g++-16, packages: "gcc-16 g++-16 lld", ppa: ubuntu-toolchain-r, lld_flags: "-fuse-ld=lld" }
+          - { os: ubuntu-24.04, compiler: clang-22, toolchain: clang, preset: dev-clang, cc: clang-22, cxx: clang++-22, packages: "clang-22 lld-22 llvm-22 llvm-22-linker-tools g++-16", llvm_ver: "22", ppa: ubuntu-toolchain-r, gcc_toolchain: "16", lld_flags: "--ld-path=/usr/bin/ld.lld-22" }
+          - { os: windows-2025-vs2026, compiler: msvc-2026, toolchain: msvc, preset: dev-msvc, cxx: cl }
+          - { os: windows-2025-vs2026, compiler: clang-cl-20, toolchain: clang-cl, preset: dev-clang-cl, cxx: clang-cl }
+          - { os: macos-15, compiler: apple-clang-16, toolchain: apple-clang, preset: dev-clang, cxx: clang++ }
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "4.4.0"
+
+      - name: Set up MSVC environment
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+              -latest -property installationPath
+          $vcvars = "$vsPath\VC\Auxiliary\Build\vcvars64.bat"
+          cmd /c "`"$vcvars`" && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+              "$($Matches[1])=$($Matches[2])" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+          }
+
+      - name: Add ubuntu-toolchain-r PPA
+        if: matrix.ppa == 'ubuntu-toolchain-r'
+        run: |
+          sudo add-apt-repository ppa:ubuntu-toolchain-r/test
+          sudo apt-get update
+
+      - name: Add LLVM APT source
+        if: runner.os == 'Linux' && matrix.llvm_ver != ''
+        run: |
+          CODENAME=$(lsb_release -cs)
+          wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key \
+            | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+          echo "deb http://apt.llvm.org/${CODENAME}/ llvm-toolchain-${CODENAME}-${{ matrix.llvm_ver }} main" \
+            | sudo tee /etc/apt/sources.list.d/llvm.list
+          sudo apt-get update
+
+      - name: Install Linux tools and compiler
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y --no-install-recommends ninja-build ${{ matrix.packages }}
+
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: HOMEBREW_NO_AUTO_UPDATE=1 brew install ninja
+
+      # Consumers are built with the same --gcc-install-dir as the library.
+      - name: Set clang GCC toolchain
+        if: matrix.gcc_toolchain != ''
+        run: echo "CXXFLAGS=--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/${{ matrix.gcc_toolchain }}" >> "$GITHUB_ENV"
+
+      - name: Build and install library (Release)
+        shell: bash
+        run: |
+          compiler_args=()
+          if [ -n "${{ matrix.cc }}" ]; then
+            compiler_args+=(-DCMAKE_C_COMPILER=${{ matrix.cc }} -DCMAKE_CXX_COMPILER=${{ matrix.cxx }})
+          fi
+          if [ -n "${{ matrix.gcc_toolchain }}" ]; then
+            compiler_args+=(-DCMAKE_CXX_FLAGS_INIT="$CXXFLAGS")
+          fi
+          cmake --preset ${{ matrix.preset }} -B build/library \
+            "${compiler_args[@]}" -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF
+          cmake --build build/library --config Release
+          cmake --install build/library --config Release \
+            --prefix "${{ runner.temp }}/eggs-stacktrace-install"
+
+      - name: Run integration matrix
+        shell: bash
+        run: |
+          extra_args=()
+          if [ -n "${{ matrix.lld_flags }}" ]; then
+            extra_args+=(--lld-flags="${{ matrix.lld_flags }}")
+          fi
+          ${{ runner.os == 'Windows' && 'python' || 'python3' }} test/integration/run_matrix.py \
+            --toolchain ${{ matrix.toolchain }} \
+            --cxx ${{ matrix.cxx }} \
+            --prefix "${{ runner.temp }}/eggs-stacktrace-install" \
+            --out "${{ runner.temp }}/integration" \
+            --filter "${{ inputs.filter }}" \
+            "${extra_args[@]}"
+
+      - name: Upload traces
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: integration-traces-${{ matrix.compiler }}
+          path: |
+            ${{ runner.temp }}/integration/traces
+            ${{ runner.temp }}/integration/summary.csv
+            ${{ runner.temp }}/integration/summary.md
+          if-no-files-found: ignore
+          retention-days: 30

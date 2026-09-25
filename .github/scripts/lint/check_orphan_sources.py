@@ -21,6 +21,7 @@ SOURCE_EXTENSIONS = {".h", ".hpp", ".c", ".cpp"}
 EXCLUDED_DIRS = (
     "test/cmake-fetch_content/",
     "test/cmake-find_package/",
+    "test/integration/",
 )
 
 

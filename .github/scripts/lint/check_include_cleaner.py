@@ -33,6 +33,7 @@ VERIFY_HEADER_SETS_DIRS = (
 EXCLUDED_DIRS = (
     "test/cmake-fetch_content/",
     "test/cmake-find_package/",
+    "test/integration/",
 )
 
 # Flags stripped from a compile_commands.json entry before reuse: the

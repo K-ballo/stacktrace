@@ -58,6 +58,7 @@ FAILED_STATUSES = {"configure-failed", "build-failed", "check-failed",
 class Value:
     name: str
     cxx: tuple = ()  # compile flags
+    exe_cxx: tuple = ()  # compile flags, code linked into executables only
     link: tuple = ()  # link flags, every binary
     exe_link: tuple = ()  # link flags, executables only
     cmake: tuple = ()  # extra -D arguments
@@ -83,8 +84,8 @@ def gnu_axes(args):
             Value("nofp", cxx=("-fomit-frame-pointer",)),
         ],
         "pie": [
-            Value("pie", cxx=("-fPIE",), exe_link=("-pie",)),
-            Value("nopie", cxx=("-fno-pie",), exe_link=("-no-pie",)),
+            Value("pie", exe_cxx=("-fPIE",), exe_link=("-pie",)),
+            Value("nopie", exe_cxx=("-fno-pie",), exe_link=("-no-pie",)),
         ],
         "exports": [
             Value("rdynamic", exe_link=("-rdynamic",)),
@@ -220,7 +221,9 @@ def copy_binaries(src, dst, exclude_suffixes):
     for f in src.iterdir():
         if f.is_file() and f.suffix.lower() not in exclude_suffixes:
             shutil.copy2(f, dst / f.name)
-    return [f for f in dst.iterdir() if f.is_file() and is_binary(f)]
+    # Split DWARF objects (e.g. from LTO) are not binaries to post-process.
+    return [f for f in dst.iterdir()
+            if f.is_file() and f.suffix != ".dwo" and is_binary(f)]
 
 
 @contextlib.contextmanager
@@ -345,6 +348,7 @@ def run_combo(args, family, combo):
         "-DCMAKE_BUILD_TYPE=Integration",
         f"-DCMAKE_PREFIX_PATH={args.prefix}",
         f"-DCMAKE_CXX_FLAGS_INTEGRATION={flags('cxx')}",
+        f"-DINTEGRATION_EXE_CXX_FLAGS={flags('exe_cxx')}",
         f"-DCMAKE_EXE_LINKER_FLAGS_INTEGRATION={exe_link}",
         f"-DCMAKE_SHARED_LINKER_FLAGS_INTEGRATION={link}",
         f"-DCMAKE_MODULE_LINKER_FLAGS_INTEGRATION={link}",
@@ -371,7 +375,8 @@ def run_combo(args, family, combo):
 
     apps = sorted(
         f.name for f in (build_dir / "bin").iterdir()
-        if f.name.startswith("integration_app_") and f.suffix in ("", ".exe")
+        if f.is_file() and f.name.startswith("integration_app_")
+        and f.suffix in ("", ".exe")
     )
     rows = []
     _, _, variants_fn = FAMILY_RULES[family]

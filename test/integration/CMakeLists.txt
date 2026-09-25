@@ -42,6 +42,11 @@ if(CMAKE_INTERPROCEDURAL_OPTIMIZATION)
     endif()
 endif()
 
+# Compile flags for code that only ends up in executables (e.g. -fno-pie),
+# which would break the shared libraries.
+set(INTEGRATION_EXE_CXX_FLAGS "" CACHE STRING "Compile flags for app code")
+separate_arguments(_exe_cxx_flags NATIVE_COMMAND "${INTEGRATION_EXE_CXX_FLAGS}")
+
 find_package(Eggs.Stacktrace REQUIRED)
 find_package(Threads REQUIRED)
 
@@ -75,7 +80,10 @@ foreach(_backend IN ITEMS Null Execinfo Libbacktrace Win32)
         PUBLIC Eggs::Stacktrace::${_backend} integration_plugin Threads::Threads
     )
 
+    target_compile_options(integration_core_${_name} PRIVATE ${_exe_cxx_flags})
+
     add_executable(integration_app_${_name} src/main.cpp)
+    target_compile_options(integration_app_${_name} PRIVATE ${_exe_cxx_flags})
     target_compile_definitions(
         integration_app_${_name}
         PRIVATE

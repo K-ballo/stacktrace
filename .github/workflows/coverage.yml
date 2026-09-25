@@ -220,3 +220,122 @@ jobs:
           name: coverage-report-gcov
           path: build/coverage-gcc/html/
           retention-days: 7
+
+  coverage-win32:
+    name: windows-2025-vs2026 / clang-cl / llvm-cov
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "4.4.0"
+
+      - name: Set up MSVC environment
+        shell: pwsh
+        run: |
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+              -latest -property installationPath
+          $vcvars = "$vsPath\VC\Auxiliary\Build\vcvars64.bat"
+          cmd /c "`"$vcvars`" && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+              "$($Matches[1])=$($Matches[2])" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+          }
+
+      - name: Locate LLVM coverage tools
+        shell: pwsh
+        run: |
+          $clangPath = (Get-Command clang-cl).Source
+          $llvmBin = Split-Path $clangPath
+          $llvmRoot = Split-Path $llvmBin
+          "LLVM_PROFDATA=$llvmBin\llvm-profdata.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "LLVM_COV=$llvmBin\llvm-cov.exe" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          $profileLib = Get-ChildItem -Path "$llvmRoot\lib\clang" -Recurse `
+              -Filter "clang_rt.profile-x86_64.lib" -ErrorAction SilentlyContinue |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $profileLib) {
+            throw "Could not locate clang_rt.profile-x86_64.lib under $llvmRoot"
+          }
+          # Use forward slashes: CMake's -D argument parsing treats a bare
+          # backslash as an escape character and silently drops it.
+          $profileLib = $profileLib -replace '\\', '/'
+          "LLVM_PROFILE_LIB=$profileLib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Configure (coverage)
+        shell: pwsh
+        run: |
+          cmake --preset dev-clang-cl -B build/coverage-win32 `
+            -DCMAKE_CXX_FLAGS_INIT="-fprofile-instr-generate -fcoverage-mapping" `
+            "-DCMAKE_EXE_LINKER_FLAGS_INIT=`"$env:LLVM_PROFILE_LIB`""
+
+      - name: Build
+        shell: pwsh
+        run: cmake --build build/coverage-win32 --config Debug
+
+      - name: Test
+        shell: pwsh
+        run: |
+          $env:LLVM_PROFILE_FILE = "$PWD\build\coverage-win32\cov-%p.profraw"
+          ctest --test-dir build/coverage-win32 --build-config Debug --output-on-failure --no-compress-output
+
+      - name: Merge profile data
+        shell: pwsh
+        run: |
+          $profraws = Get-ChildItem -Recurse build/coverage-win32 -Filter *.profraw |
+            Select-Object -ExpandProperty FullName
+          & "$env:LLVM_PROFDATA" merge -sparse $profraws -o build/coverage-win32/coverage.profdata
+
+      - name: Coverage report
+        shell: pwsh
+        run: |
+          $objects = Get-ChildItem -Recurse build/coverage-win32 -Include *.exe,*.dll |
+            Where-Object { $_.FullName -match '\\Debug\\' } |
+            Select-Object -ExpandProperty FullName
+          $first = $objects[0]
+          $objArgs = @()
+          if ($objects.Length -gt 1) {
+            $objArgs = $objects[1..($objects.Length - 1)] | ForEach-Object { "-object=$_" }
+          }
+          $report = & "$env:LLVM_COV" report $first @objArgs `
+            "-instr-profile=build/coverage-win32/coverage.profdata" `
+            "-path-equivalence=.,$PWD" `
+            -use-color=false src include/eggs
+          $report
+          if ($env:GITHUB_STEP_SUMMARY) {
+            "## Coverage report (llvm-cov, win32)" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            "" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            '```' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            $report | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+            '```' | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+          }
+
+      - name: Generate HTML report
+        shell: pwsh
+        run: |
+          $objects = Get-ChildItem -Recurse build/coverage-win32 -Include *.exe,*.dll |
+            Where-Object { $_.FullName -match '\\Debug\\' } |
+            Select-Object -ExpandProperty FullName
+          $first = $objects[0]
+          $objArgs = @()
+          if ($objects.Length -gt 1) {
+            $objArgs = $objects[1..($objects.Length - 1)] | ForEach-Object { "-object=$_" }
+          }
+          & "$env:LLVM_COV" show $first @objArgs `
+            "-instr-profile=build/coverage-win32/coverage.profdata" `
+            "-path-equivalence=.,$PWD" `
+            -format=html `
+            -output-dir=build/coverage-win32/html `
+            -show-line-counts-or-regions `
+            src include/eggs
+
+      - name: Upload coverage report
+        uses: actions/upload-artifact@v6
+        with:
+          name: coverage-report-win32-llvm-cov
+          path: build/coverage-win32/html/
+          retention-days: 7

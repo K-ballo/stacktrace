@@ -129,3 +129,29 @@ if(TARGET Eggs::Stacktrace::Execinfo)
         PROPERTIES LABELS "unit"
     )
 endif()
+
+# -- win32 backend test ---------------------------------------------------------
+
+if(TARGET Eggs::Stacktrace::Win32)
+    add_executable(eggs.stacktrace.test.stacktrace_win32 stacktrace_win32.cpp)
+    target_sources(
+        eggs.stacktrace.test.stacktrace_win32
+        PRIVATE
+            FILE_SET private_headers
+                TYPE HEADERS
+                BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+                FILES support.hpp
+    )
+    target_link_libraries(
+        eggs.stacktrace.test.stacktrace_win32
+        PRIVATE Eggs::Stacktrace::Win32
+    )
+    add_test(
+        NAME eggs.stacktrace.stacktrace_win32
+        COMMAND eggs.stacktrace.test.stacktrace_win32
+    )
+    set_tests_properties(
+        eggs.stacktrace.stacktrace_win32
+        PROPERTIES LABELS "unit"
+    )
+endif()

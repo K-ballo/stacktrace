@@ -46,7 +46,15 @@ Checks: >
 HeaderFilterRegex: '.*'
 WarningsAsErrors: ''
 
+# MSVC-only flags in the compilation database (e.g. /d1trimfile) are otherwise
+# reported as errors by the clang-cl driver.
+ExtraArgs:
+  - -Wno-unused-command-line-argument
+
 CheckOptions:
+  # Windows SDK symbols come from internal headers (minwindef.h, winnt.h, ...);
+  # <windows.h> is the supported entry point.
+  misc-include-cleaner.IgnoreHeaders: 'Windows Kits[/\\].*'
   misc-non-private-member-variables-in-classes.IgnoreClassesWithAllMemberVariablesBeingPublic: true
   modernize-use-nodiscard.ReplacementString: EGGS_STACKTRACE_NODISCARD
   readability-named-parameter.InsertPlainNamesInForwardDecls: true

@@ -20,7 +20,7 @@ import subprocess
 import sys
 
 DIAGNOSTIC_RE = re.compile(
-    r"^(?P<file>[^:\n]+):(?P<line>\d+):(?P<column>\d+): warning: "
+    r"^(?P<file>.+?):(?P<line>\d+):(?P<column>\d+): warning: "
     r"(?P<message>.*) \[(?P<check>[\w,.\-]+)\]$"
 )
 

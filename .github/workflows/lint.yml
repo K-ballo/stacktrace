@@ -146,6 +146,75 @@ jobs:
         run: python3 .github/scripts/lint/warn-everything-check-changed.py
                build/clang-tidy/clang-tidy.sarif ${{ steps.diff-base.outputs.ref }} clang-tidy
 
+  clang-tidy-win32:
+    name: clang-tidy win32 (clang-22)
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 15
+
+    env:
+      EGGS_STACKTRACE_SOURCE_DIR: ${{ github.workspace }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "4.4.0"
+
+      - name: Install LLVM 22
+        run: choco upgrade llvm --version=22.1.0 --allow-downgrade -y --no-progress
+
+      - name: Set up MSVC environment
+        shell: pwsh
+        run: |
+          $vsPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" `
+              -latest -property installationPath
+          $vcvars = "$vsPath\VC\Auxiliary\Build\vcvars64.bat"
+          cmd /c "`"$vcvars`" && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') {
+              "$($Matches[1])=$($Matches[2])" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+            }
+          }
+          # Ahead of any clang-tidy bundled with Visual Studio.
+          "C:\Program Files\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Configure
+        run: |
+          clang-tidy --version
+          cmake --preset dev-msvc -B build/clang-tidy
+
+      - name: Run clang-tidy
+        run: python .github/scripts/lint/clang-tidy-run.py
+               build/clang-tidy build/clang-tidy/clang-tidy.sarif
+
+      - name: Upload SARIF
+        uses: actions/upload-artifact@v6
+        with:
+          name: clang-tidy-win32.sarif
+          path: build/clang-tidy/clang-tidy.sarif
+          retention-days: 7
+
+      - name: Determine diff base
+        id: diff-base
+        shell: bash
+        run: |
+          if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            if git rev-parse --verify -q HEAD^ > /dev/null; then
+              echo "ref=HEAD^" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            git fetch origin main
+            echo "ref=origin/main" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check warnings on changed lines
+        if: steps.diff-base.outputs.ref != ''
+        run: python .github/scripts/lint/warn-everything-check-changed.py
+               build/clang-tidy/clang-tidy.sarif ${{ steps.diff-base.outputs.ref }} clang-tidy-win32
+
   warn-everything:
     name: -Weverything (clang-22)
     runs-on: ubuntu-24.04

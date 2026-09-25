@@ -28,6 +28,9 @@ Replace `dev-gcc` with `dev-clang`, `dev-clang-libcxx`, or `dev-msvc` as appropr
 
 `Eggs::Stacktrace` aliases the best available backend on the current platform.
 
+> **Note:** DbgHelp is not thread-safe. The win32 backend serializes its own
+> `Sym*` calls, but not those made elsewhere in the process.
+
 ## Usage
 
 ```cpp

@@ -31,6 +31,10 @@ inputs:
     description: GCC version whose toolchain directory clang should use via --gcc-install-dir
     required: false
     default: ""
+  backends:
+    description: EGGS_STACKTRACE_BACKENDS to build (e.g. "execinfo;libbacktrace"); empty auto-detects
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -48,10 +52,14 @@ runs:
         if [ -n "${{ inputs.gcc_toolchain }}" ]; then
           compiler_args+=(-DCMAKE_CXX_FLAGS_INIT="--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/${{ inputs.gcc_toolchain }}")
         fi
+        backend_args=()
+        if [ -n "${{ inputs.backends }}" ]; then
+          backend_args+=("-DEGGS_STACKTRACE_BACKENDS=${{ inputs.backends }}")
+        fi
 
         echo "::group::Configure C++${std}"
         cmake --preset ${{ inputs.preset }} -B "${build_dir}" \
-          "${compiler_args[@]}" \
+          "${compiler_args[@]}" "${backend_args[@]}" \
           -DBUILD_EXAMPLES=ON -DBUILD_TESTING=ON \
           -DCMAKE_CXX_STANDARD=${std} || failed=1
         echo "::endgroup::"

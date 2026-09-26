@@ -53,15 +53,6 @@ FAMILIES = {
     "clang-cl": "msvc",
 }
 
-# Backends the installed package must provide, besides null.
-EXPECTED_BACKENDS = {
-    "gcc": ["execinfo", "libbacktrace"],
-    "clang": ["execinfo", "libbacktrace"],
-    "apple-clang": ["execinfo"],
-    "msvc": ["win32"],
-    "clang-cl": ["win32"],
-}
-
 FAILED_STATUSES = {"configure-failed", "build-failed", "check-failed",
                    "crashed", "timeout", "variant-failed", "missing-backend"}
 
@@ -468,9 +459,10 @@ def main() -> int:
     parser.add_argument("--out", type=pathlib.Path, default=pathlib.Path(
                         "build/integration"))
     parser.add_argument("--cxx", help="C++ compiler")
-    parser.add_argument("--expect-backends",
-                        help="space-separated backends the package must "
-                        "provide; defaults per toolchain")
+    parser.add_argument("--expect-backends", default="",
+                        help="backends the package must provide, space or "
+                        "semicolon separated (the EGGS_STACKTRACE_BACKENDS "
+                        "it was built with)")
     parser.add_argument("--allow-unsupported", action="store_true",
                         help="don't fail combinations the toolchain can't "
                         "build (e.g. LTO unavailable)")
@@ -488,9 +480,7 @@ def main() -> int:
                         help="list combinations and exit")
     args = parser.parse_args()
 
-    args.expect_backends = (EXPECTED_BACKENDS[args.toolchain]
-                            if args.expect_backends is None
-                            else args.expect_backends.split())
+    args.expect_backends = args.expect_backends.replace(";", " ").split()
     family = FAMILIES[args.toolchain]
     pattern = re.compile(args.filter)
     combos = [c for c in combinations(args, family)

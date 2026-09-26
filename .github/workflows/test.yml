@@ -18,7 +18,7 @@ jobs:
   build:
     name: ${{ matrix.os }} / ${{ matrix.compiler }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 120
 
     strategy:
       fail-fast: false
@@ -30,23 +30,23 @@ jobs:
           - { os: ubuntu-24.04, compiler: gcc-13, cxxstds: "11 14 17 20 23", preset: dev-gcc, cc: gcc-13, cxx: g++-13, packages: "gcc-13 g++-13" }
           - { os: ubuntu-24.04, compiler: gcc-14, cxxstds: "11 14 17 20 23 26", preset: dev-gcc, cc: gcc-14, cxx: g++-14, packages: "gcc-14 g++-14" }
           - { os: ubuntu-24.04, compiler: gcc-15, cxxstds: "11 14 17 20 23 26", preset: dev-gcc, cc: gcc-15, cxx: g++-15, packages: "gcc-15 g++-15", ppa: ubuntu-toolchain-r }
-          - { os: ubuntu-24.04, compiler: gcc-16, cxxstds: "11 14 17 20 23 26", preset: dev-gcc, cc: gcc-16, cxx: g++-16, packages: "gcc-16 g++-16", ppa: ubuntu-toolchain-r }
+          - { os: ubuntu-24.04, compiler: gcc-16, cxxstds: "11 14 17 20 23 26", preset: dev-gcc, cc: gcc-16, cxx: g++-16, packages: "gcc-16 g++-16", ppa: ubuntu-toolchain-r, integration: gcc }
           # -- Linux / Clang ----------------------------------------------------
           - { os: ubuntu-24.04, compiler: clang-17, cxxstds: "11 14 17 20 23", preset: dev-clang, cc: clang-17, cxx: clang++-17, packages: "clang-17 clang-tools-17", gcc_toolchain: "13" }
           - { os: ubuntu-24.04, compiler: clang-18, cxxstds: "11 14 17 20 23", preset: dev-clang, cc: clang-18, cxx: clang++-18, packages: "clang-18 clang-tools-18", gcc_toolchain: "13" }
           - { os: ubuntu-24.04, compiler: clang-19, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-19, cxx: clang++-19, packages: "clang-19 clang-tools-19 g++-14", gcc_toolchain: "14" }
           - { os: ubuntu-24.04, compiler: clang-20, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-20, cxx: clang++-20, packages: "clang-20 clang-tools-20 g++-14", llvm_ver: "20", gcc_toolchain: "14" }
-          - { os: ubuntu-24.04, compiler: clang-22, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-22, cxx: clang++-22, packages: "clang-22 clang-tools-22 g++-16", llvm_ver: "22", ppa: ubuntu-toolchain-r, gcc_toolchain: "16" }
+          - { os: ubuntu-24.04, compiler: clang-22, cxxstds: "11 14 17 20 23 26", preset: dev-clang, cc: clang-22, cxx: clang++-22, packages: "clang-22 clang-tools-22 g++-16", llvm_ver: "22", ppa: ubuntu-toolchain-r, gcc_toolchain: "16", integration: clang }
           # -- Linux / Clang + libc++ -------------------------------------------
           - { os: ubuntu-24.04, compiler: clang-19-libcxx, cxxstds: "11 14 17 20 23 26", preset: dev-clang-libcxx, cc: clang-19, cxx: clang++-19, packages: "clang-19 clang-tools-19 libc++-19-dev libc++abi-19-dev g++-14", gcc_toolchain: "14" }
           - { os: ubuntu-24.04, compiler: clang-22-libcxx, cxxstds: "11 14 17 20 23 26", preset: dev-clang-libcxx, cc: clang-22, cxx: clang++-22, packages: "clang-22 clang-tools-22 libc++-22-dev libc++abi-22-dev g++-16", llvm_ver: "22", ppa: ubuntu-toolchain-r, gcc_toolchain: "16" }
           # -- Windows / MSVC ---------------------------------------------------
           - { os: windows-2022, compiler: msvc-2022, cxxstds: "14 17 20 23", preset: dev-msvc }
-          - { os: windows-2025-vs2026, compiler: msvc-2026, cxxstds: "14 17 20 23", preset: dev-msvc }
+          - { os: windows-2025-vs2026, compiler: msvc-2026, cxxstds: "14 17 20 23", preset: dev-msvc, integration: msvc, integration_cxx: cl }
           # -- Windows / Clang-CL ------------------------------------------------
-          - { os: windows-2025-vs2026, compiler: clang-cl-20, cxxstds: "14 17 20 23 26", preset: dev-clang-cl }
+          - { os: windows-2025-vs2026, compiler: clang-cl-20, cxxstds: "14 17 20 23 26", preset: dev-clang-cl, integration: clang-cl, integration_cxx: clang-cl }
           # -- macOS / Apple Clang ----------------------------------------------
-          - { os: macos-15, compiler: apple-clang-16, cxxstds: "11 14 17 20 23 26", preset: dev-clang }
+          - { os: macos-15, compiler: apple-clang-16, cxxstds: "11 14 17 20 23 26", preset: dev-clang, integration: apple-clang, integration_cxx: clang++ }
 
     steps:
       - uses: actions/checkout@v5
@@ -199,6 +199,44 @@ jobs:
         with:
           name: test-results-${{ matrix.compiler }}
           path: build/${{ matrix.preset }}-cxx*/test-results-*.xml
+          if-no-files-found: ignore
+          retention-days: 30
+
+      # -----------------------------------------------------------------------
+      # Integration - builds test/integration against the installed Release
+      # library under every combination of flags that can affect a stacktrace,
+      # and uploads the traces (entries with `integration` set, and only when
+      # everything above passed). See test/integration/run_matrix.py.
+      # -----------------------------------------------------------------------
+      - name: Integration - Install (Release)
+        id: integration_install
+        if: success() && matrix.integration != ''
+        shell: bash
+        run: |
+          for s in ${{ matrix.cxxstds }}; do latest_std=$s; done
+          cmake --install build/${{ matrix.preset }}-cxx${latest_std}             --prefix "${{ runner.temp }}/eggs-stacktrace-integration" --config Release
+
+      - name: Integration - Run
+        id: integration_run
+        if: steps.integration_install.outcome == 'success'
+        shell: bash
+        env:
+          # Consumers are built with the same --gcc-install-dir as the library.
+          CXXFLAGS: ${{ matrix.gcc_toolchain != '' && format('--gcc-install-dir=/usr/lib/gcc/x86_64-linux-gnu/{0}', matrix.gcc_toolchain) || '' }}
+        run: |
+          ${{ runner.os == 'Windows' && 'python' || 'python3' }} test/integration/run_matrix.py             --toolchain ${{ matrix.integration }}             --cxx ${{ matrix.integration_cxx || matrix.cxx }}             --prefix "${{ runner.temp }}/eggs-stacktrace-integration"             --out "${{ runner.temp }}/integration"
+
+      - name: Integration - Upload traces
+        id: integration_upload
+        continue-on-error: true
+        if: always() && steps.integration_install.outcome == 'success'
+        uses: actions/upload-artifact@v6
+        with:
+          name: integration-traces-${{ matrix.compiler }}
+          path: |
+            ${{ runner.temp }}/integration/traces
+            ${{ runner.temp }}/integration/summary.csv
+            ${{ runner.temp }}/integration/summary.md
           if-no-files-found: ignore
           retention-days: 30
 

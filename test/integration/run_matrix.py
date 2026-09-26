@@ -337,7 +337,6 @@ def run_combo(args, family, combo):
         f.name for f in (build_dir / "bin").iterdir()
         if f.is_file() and f.name.startswith("integration_app_")
         and f.suffix in ("", ".exe")
-        and (not args.backends or app_backend(f.name) in args.backends)
     )
     rows = []
     _, _, variants_fn = FAMILY_RULES[family]
@@ -404,8 +403,6 @@ def main() -> int:
     parser.add_argument("--out", type=pathlib.Path, default=pathlib.Path(
                         "build/integration"))
     parser.add_argument("--cxx", help="C++ compiler")
-    parser.add_argument("--backends", default="",
-                        help="space-separated backends to run; empty for all")
     parser.add_argument("--strip", default="strip")
     parser.add_argument("--filter", default="",
                         help="regex; only combinations whose name matches")
@@ -420,7 +417,6 @@ def main() -> int:
                         help="list combinations and exit")
     args = parser.parse_args()
 
-    args.backends = set(args.backends.split())
     family = FAMILIES[args.toolchain]
     pattern = re.compile(args.filter)
     combos = [c for c in combinations(args, family)

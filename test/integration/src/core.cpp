@@ -102,11 +102,20 @@ struct traced_error : std::runtime_error
 {
     eggs::stacktrace trace;
 
-    // skip=1: the trace starts at the throw site, not in this constructor.
-    // Not inlined, or skip=1 would skip the throw site instead.
-    INTEGRATION_NOINLINE traced_error()
+    // skip=1: the trace starts at the throw site, not in this factory. Not
+    // inlined, or skip=1 would skip the throw site instead. Not captured in a
+    // constructor, whose frame count is unpredictable: the complete object
+    // constructor may call the base object one (at -O0 on Mach-O, which has
+    // no symbol aliases).
+    INTEGRATION_NOINLINE static traced_error make()
+    {
+        return traced_error(eggs::stacktrace::current(1));
+    }
+
+  private:
+    explicit traced_error(eggs::stacktrace st)
         : std::runtime_error("traced_error"),
-          trace(eggs::stacktrace::current(1))
+          trace(std::move(st))
     {
     }
 };
@@ -115,7 +124,7 @@ template <typename T>
 [[noreturn]] INTEGRATION_NOINLINE void throw_traced(traced_context& ctx)
 {
     ctx.top = "throw_traced";
-    INTEGRATION_CALL(ctx, "throw_traced", throw traced_error());
+    INTEGRATION_CALL(ctx, "throw_traced", throw traced_error::make());
 }
 
 } // namespace

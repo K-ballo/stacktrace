@@ -66,6 +66,47 @@ auto with_module_refresh(F const& f) noexcept -> decltype(f())
     return result;
 }
 
+// Whether DbgHelp's `info` describes `module`, as loaded now.
+bool same_image(IMAGEHLP_MODULEW64 const& info, HMODULE module) noexcept
+{
+    auto const base = reinterpret_cast<unsigned char const*>(module);
+    auto const& dos = *reinterpret_cast<IMAGE_DOS_HEADER const*>(base);
+    auto const& nt =
+        *reinterpret_cast<IMAGE_NT_HEADERS const*>(base + dos.e_lfanew);
+    if (info.BaseOfImage != reinterpret_cast<DWORD64>(module) ||
+        info.ImageSize != nt.OptionalHeader.SizeOfImage ||
+        info.TimeDateStamp != nt.FileHeader.TimeDateStamp) {
+        return false;
+    }
+
+    wchar_t path[MAX_PATH];
+    DWORD const len = ::GetModuleFileNameW(module, path, MAX_PATH);
+    return len == 0 || len == MAX_PATH ||
+           ::CompareStringOrdinal(path, -1, info.ImageName, -1, TRUE) ==
+               CSTR_EQUAL;
+}
+
+// DbgHelp keeps the modules it knows about even after they are unloaded, so
+// that another one later loaded at the same address would be described by
+// the stale one. Drop DbgHelp's module at `addr` unless it is what is loaded
+// there; the lookup then refreshes. Must be called with the lock held.
+void forget_stale_module(DWORD64 addr) noexcept
+{
+    HANDLE const process = ::GetCurrentProcess();
+    IMAGEHLP_MODULEW64 info = {};
+    info.SizeOfStruct = sizeof(info);
+    if (::SymGetModuleInfoW64(process, addr, &info) == FALSE) return;
+
+    HMODULE module = nullptr;
+    bool const loaded = ::GetModuleHandleExW(
+                            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+                            reinterpret_cast<LPCWSTR>(addr), &module
+                        ) != FALSE;
+    if (loaded && same_image(info, module)) return;
+    ::SymUnloadModule64(process, info.BaseOfImage);
+}
+
 // Captured addresses are return addresses; subtract 1 to point into the
 // call instruction itself.
 IMAGEHLP_LINE64 get_line_info(void* address) noexcept
@@ -78,6 +119,7 @@ IMAGEHLP_LINE64 get_line_info(void* address) noexcept
     DWORD64 const addr = reinterpret_cast<DWORD64>(address) - 1;
 
     std::lock_guard<std::mutex> const lock(dbg_mutex());
+    forget_stale_module(addr);
     bool const found = with_module_refresh([&]() noexcept {
         return ::SymGetLineFromAddr64(
                    ::GetCurrentProcess(), addr, &displacement, &line
@@ -181,6 +223,7 @@ std::string symbolize_description(void* address)
     std::lock_guard<std::mutex> const lock(dbg_mutex());
     DWORD64 const addr = reinterpret_cast<DWORD64>(address) - 1;
     DWORD64 displacement = 0;
+    forget_stale_module(addr);
     bool const found = with_module_refresh([&]() noexcept {
         return ::SymFromAddr(
                    ::GetCurrentProcess(), addr, &displacement, &buf.sym

@@ -15,8 +15,9 @@
 // Checks are deliberately minimal: a non-null backend must capture a
 // non-empty trace, a capped capture must respect its cap, and frame 0, when
 // named, must be the function that captured (or the throw site, for a capture
-// skipping an exception constructor). Whether names and source locations
-// resolve is reported, never enforced.
+// skipping the exception's factory), and no frame may be named after a
+// function of an unloaded module. Whether names and source locations resolve
+// is reported, never enforced.
 
 #include <eggs/stacktrace.hpp>
 
@@ -112,6 +113,17 @@ void report(char const* scenario, traced_context const& ctx)
     );
 
     if (!is_null_backend) check(!ctx.trace.empty(), scenario, "empty trace");
+    for (eggs::stacktrace_entry const& e : ctx.trace) {
+        std::string const name = e.description();
+        for (char const* stale : ctx.stale) {
+            if (name.find(stale) != std::string::npos) {
+                std::printf(
+                    "@fail %s frame named after unloaded %s\n", scenario, stale
+                );
+                ++failures;
+            }
+        }
+    }
     // Frame 0 need not have a name, but a name must be the right one.
     if (ctx.top != nullptr && !ctx.trace.empty()) {
         std::string const top = ctx.trace[0].description();
@@ -135,25 +147,65 @@ void run(char const* scenario, void (*entry)(traced_context&))
     report(scenario, ctx);
 }
 
-// Loads the module that sits next to the executable, after the other
-// scenarios have symbolized, so it is unknown when symbolization starts.
-integration::core::module_forward_fn load_module(char const* argv0)
+struct loaded_module
 {
-    std::string path = argv0;
-    std::size_t const sep = path.find_last_of("/\\");
-    path = (sep == std::string::npos ? std::string(".") : path.substr(0, sep)) +
-           "/" + INTEGRATION_MODULE_NAME;
+    std::string path;
+    void* handle = nullptr;
+    integration::core::module_forward_fn forward = nullptr;
+};
+
+// Loads a module that sits next to the executable, and looks up its entry
+// point `forward`.
+loaded_module
+load_module(char const* argv0, char const* name, char const* forward)
+{
+    loaded_module m;
+    m.path = argv0;
+    std::size_t const sep = m.path.find_last_of("/\\");
+    m.path =
+        (sep == std::string::npos ? std::string(".") : m.path.substr(0, sep)) +
+        "/" + name;
 
 #if defined(_WIN32)
-    HMODULE const module = ::LoadLibraryA(path.c_str());
-    if (module == nullptr) return nullptr;
-    FARPROC const sym = ::GetProcAddress(module, "integration_module_forward");
+    HMODULE const module = ::LoadLibraryA(m.path.c_str());
+    if (module == nullptr) return m;
+    m.handle = module;
+    FARPROC const sym = ::GetProcAddress(module, forward);
 #else
-    void* const module = ::dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
-    if (module == nullptr) return nullptr;
-    void* const sym = ::dlsym(module, "integration_module_forward");
+    m.handle = ::dlopen(m.path.c_str(), RTLD_NOW | RTLD_LOCAL);
+    if (m.handle == nullptr) return m;
+    void* const sym = ::dlsym(m.handle, forward);
 #endif
-    return reinterpret_cast<integration::core::module_forward_fn>(sym);
+    m.forward = reinterpret_cast<integration::core::module_forward_fn>(sym);
+    return m;
+}
+
+// Unloads `m`, returning whether it is actually gone.
+bool unload_module(loaded_module const& m)
+{
+#if defined(_WIN32)
+    ::FreeLibrary(static_cast<HMODULE>(m.handle));
+    return ::GetModuleHandleA(m.path.c_str()) == nullptr;
+#else
+    ::dlclose(m.handle);
+    void* const still = ::dlopen(m.path.c_str(), RTLD_NOW | RTLD_NOLOAD);
+    if (still != nullptr) ::dlclose(still);
+    return still == nullptr;
+#endif
+}
+
+// The address `m` is loaded at.
+void const* module_base(loaded_module const& m)
+{
+#if defined(_WIN32)
+    return m.handle;
+#else
+    ::Dl_info info{};
+    if (::dladdr(reinterpret_cast<void*>(m.forward), &info) == 0) {
+        return nullptr;
+    }
+    return info.dli_fbase;
+#endif
 }
 
 } // namespace
@@ -175,13 +227,37 @@ int main(int argc, char* argv[])
     run("cold", &core::cold_entry);
     run("recursion", &core::recursion_entry);
 
-    core::module_forward_fn const forward =
-        argc > 0 ? load_module(argv[0]) : nullptr;
-    check(forward != nullptr, "module", "load failed");
-    if (forward != nullptr) {
+    // Loaded after the scenarios above have symbolized, so it is unknown
+    // when symbolization starts.
+    char const* const argv0 = argc > 0 ? argv[0] : ".";
+    loaded_module const a = load_module(
+        argv0, INTEGRATION_MODULE_NAME, "integration_module_forward"
+    );
+    check(a.forward != nullptr, "module", "load failed");
+    if (a.forward != nullptr) {
         traced_context ctx;
-        core::module_entry(ctx, forward);
+        core::module_entry(ctx, a.forward);
         report("module", ctx);
+
+        // Replaced by another module, now that it has been symbolized; if
+        // that one lands at the same address, stale information about the
+        // first one would name its functions instead.
+        void const* const a_base = module_base(a);
+        bool const unloaded = unload_module(a);
+        loaded_module const b = load_module(
+            argv0, INTEGRATION_MODULE_B_NAME, "integration_module_b_forward"
+        );
+        check(b.forward != nullptr, "reload", "load failed");
+        if (b.forward != nullptr) {
+            std::printf(
+                "@info reload unloaded=%d same_base=%d\n", unloaded ? 1 : 0,
+                module_base(b) == a_base ? 1 : 0
+            );
+            traced_context reload;
+            reload.stale = {"integration_module_forward", "module_hidden_hop"};
+            core::module_entry(reload, b.forward);
+            report("reload", reload);
+        }
     }
 
     std::printf("@result failures=%d\n", failures);

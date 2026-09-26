@@ -19,6 +19,7 @@
 #include <exception>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -36,6 +37,10 @@
 #        define EGGS_STACKTRACE_HAVE_DLADDR
 #    endif
 #endif
+#if defined(__GLIBC__) || defined(__FreeBSD__)
+#    include <link.h>
+#    define EGGS_STACKTRACE_HAVE_DLPI_ADDS
+#endif
 
 namespace eggs {
 namespace detail {
@@ -48,14 +53,102 @@ void on_state_error(
 {
 }
 
-// One shared state per process; backtrace_create_state is called once.
 // nullptr filename lets libbacktrace auto-detect the executable path via
 // /proc/self/exe or equivalent. threaded=1 enables internal locking.
+backtrace_state* create_state() noexcept
+{
+    return ::backtrace_create_state(nullptr, 1, &on_state_error, nullptr);
+}
+
+// How many modules have been loaded and unloaded so far, where the dynamic
+// linker tells.
+struct module_generation
+{
+    bool known = false;
+    unsigned long long adds = 0;
+    unsigned long long subs = 0;
+
+    friend bool
+    operator!=(module_generation const& l, module_generation const& r) noexcept
+    {
+        return l.adds != r.adds || l.subs != r.subs;
+    }
+};
+
+#ifdef EGGS_STACKTRACE_HAVE_DLPI_ADDS
+int on_phdr(::dl_phdr_info* info, std::size_t size, void* data) noexcept
+{
+    auto& generation = *static_cast<module_generation*>(data);
+    if (size >= offsetof(::dl_phdr_info, dlpi_subs) + sizeof(info->dlpi_subs)) {
+        generation.known = true;
+        generation.adds = info->dlpi_adds;
+        generation.subs = info->dlpi_subs;
+    }
+    return 1; // the same in every entry; stop at the first
+}
+#endif
+
+module_generation current_module_generation() noexcept
+{
+    module_generation generation;
+#ifdef EGGS_STACKTRACE_HAVE_DLPI_ADDS
+    ::dl_iterate_phdr(&on_phdr, &generation);
+#endif
+    return generation;
+}
+
+// A state only knows the modules loaded when it first symbolizes, and there
+// is no refreshing it, so one is recreated after modules are loaded or
+// unloaded. States can't be freed either: replaced ones leak, which also
+// keeps them valid for concurrent users, hence the cap.
+constexpr int max_state_restarts = 16;
+
+struct state_holder
+{
+    std::mutex mutex;
+    backtrace_state* state = nullptr;
+    module_generation generation;
+    int restarts = 0;
+};
+
+state_holder& holder() noexcept
+{
+    static state_holder h;
+    return h;
+}
+
+// A state for unwinding, which doesn't depend on the loaded modules.
 backtrace_state* bt_state() noexcept
 {
-    static backtrace_state* const s =
-        ::backtrace_create_state(nullptr, 1, &on_state_error, nullptr);
-    return s;
+    state_holder& h = holder();
+    std::lock_guard<std::mutex> const lock(h.mutex);
+    if (h.state == nullptr) {
+        h.generation = current_module_generation();
+        h.state = create_state();
+    }
+    return h.state;
+}
+
+// A state for symbolizing, recreated if modules were loaded or unloaded
+// since the current one was created.
+backtrace_state* bt_symbolize_state() noexcept
+{
+    module_generation const now = current_module_generation();
+    state_holder& h = holder();
+    std::lock_guard<std::mutex> const lock(h.mutex);
+    if (h.state == nullptr) {
+        h.generation = now;
+        h.state = create_state();
+    } else if (
+        now.known && now != h.generation && h.restarts < max_state_restarts
+    ) {
+        if (backtrace_state* const s = create_state()) {
+            h.state = s;
+            ++h.restarts;
+        }
+        h.generation = now;
+    }
+    return h.state;
 }
 
 struct capture_ctx
@@ -165,7 +258,7 @@ struct pcinfo_ctx
 pcinfo_ctx get_pcinfo(void* address)
 {
     pcinfo_ctx ctx;
-    backtrace_state* const state = bt_state();
+    backtrace_state* const state = bt_symbolize_state();
     if (state == nullptr) return ctx;
 
     ::backtrace_pcinfo(
@@ -205,7 +298,7 @@ std::string symbolize_description(void* address)
 {
     if (address == nullptr) return {};
 
-    backtrace_state* const state = bt_state();
+    backtrace_state* const state = bt_symbolize_state();
     if (state == nullptr) return {};
 
     syminfo_ctx ctx;
@@ -216,9 +309,9 @@ std::string symbolize_description(void* address)
     if (ctx.error) std::rethrow_exception(ctx.error);
 
 #ifdef EGGS_STACKTRACE_HAVE_DLADDR
-    // libbacktrace only knows the modules loaded when its state was created,
-    // so it can't name frames in modules loaded later; the dynamic linker
-    // can, for exported symbols.
+    // Modules loaded after the state was created stay unknown to it where
+    // loads can't be detected, or once out of restarts; the dynamic linker
+    // can still name their exported symbols.
     if (ctx.result.empty()) {
         ::Dl_info info{};
         if (::dladdr(address, &info) != 0 && info.dli_sname != nullptr)

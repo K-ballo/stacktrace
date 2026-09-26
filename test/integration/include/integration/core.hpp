@@ -11,6 +11,7 @@
 #include <eggs/stacktrace.hpp>
 
 #include <cstddef>
+#include <vector>
 
 #include <integration/context.hpp>
 
@@ -21,6 +22,8 @@ struct traced_context : context
 {
     eggs::stacktrace trace;
     std::size_t max_frames = 0; // 0 when unbounded
+    // Functions of unloaded modules, which no frame may be named after.
+    std::vector<char const*> stale;
 };
 
 // Signature of the entry point exported by the runtime-loaded module.

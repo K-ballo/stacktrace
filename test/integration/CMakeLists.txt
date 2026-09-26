@@ -59,6 +59,9 @@ target_link_libraries(integration_plugin PUBLIC integration_context)
 add_library(integration_module MODULE src/module.cpp)
 target_link_libraries(integration_module PRIVATE integration_context)
 
+add_library(integration_module_b MODULE src/module_b.cpp)
+target_link_libraries(integration_module_b PRIVATE integration_context)
+
 # -- Per backend ---------------------------------------------------------------
 
 set(_backends)
@@ -81,12 +84,17 @@ foreach(_backend IN ITEMS Null Execinfo Libbacktrace Win32)
         PRIVATE
             INTEGRATION_BACKEND="${_name}"
             INTEGRATION_MODULE_NAME="$<TARGET_FILE_NAME:integration_module>"
+            INTEGRATION_MODULE_B_NAME="$<TARGET_FILE_NAME:integration_module_b>"
     )
     target_link_libraries(
         integration_app_${_name}
         PRIVATE integration_core_${_name} ${CMAKE_DL_LIBS}
     )
-    add_dependencies(integration_app_${_name} integration_module)
+    add_dependencies(
+        integration_app_${_name}
+        integration_module
+        integration_module_b
+    )
 endforeach()
 
 message(STATUS "Integration backends: ${_backends}")

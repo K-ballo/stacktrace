@@ -301,7 +301,7 @@ def run_app(args, app, run_dir, log):
         totals["sym_total"] += int(m.group(4))
         totals["loc_hits"] += int(m.group(5))
         totals["loc_total"] += int(m.group(6))
-    fails = re.findall(r"^@fail (.*)$", output, re.M)
+    fails = re.findall(r"^@fail (.*?)\r?$", output, re.M)
     details = ("; ".join(fails) if fails
                else f"exit code {returncode}" if status == "crashed" else "")
     return dict(status=status, returncode=returncode, details=details,

@@ -15,9 +15,12 @@ combination of compile/link flags. Each build is then run under several
 post-link variants (as built, stripped, PDB hidden, ...), once per
 installed backend.
 
-Checks are minimal: a run fails only if the combination does not build, the
-app crashes, or a non-null backend captures an empty trace. Symbol and
-source-location hit rates are reported in summary.csv, never enforced.
+Checks are minimal: a run fails only if the combination does not build (or
+is unsupported by the toolchain, unless --allow-unsupported), the installed
+package lacks an expected backend, the app crashes, or a non-null backend
+captures an empty trace. Symbol and source-location hit rates are reported
+in summary.csv, never enforced. Failures are printed at the end, as error
+annotations when running on GitHub Actions.
 
 Output layout (under --out):
   traces/<combo>/flags.txt, configure.log, build.log
@@ -50,8 +53,17 @@ FAMILIES = {
     "clang-cl": "msvc",
 }
 
+# Backends the installed package must provide, besides null.
+EXPECTED_BACKENDS = {
+    "gcc": ["execinfo", "libbacktrace"],
+    "clang": ["execinfo", "libbacktrace"],
+    "apple-clang": ["execinfo"],
+    "msvc": ["win32"],
+    "clang-cl": ["win32"],
+}
+
 FAILED_STATUSES = {"configure-failed", "build-failed", "check-failed",
-                   "crashed", "timeout", "variant-failed"}
+                   "crashed", "timeout", "variant-failed", "missing-backend"}
 
 
 @dataclasses.dataclass(frozen=True)
@@ -276,7 +288,11 @@ def run_app(args, app, run_dir, log):
         totals["sym_total"] += int(m.group(4))
         totals["loc_hits"] += int(m.group(5))
         totals["loc_total"] += int(m.group(6))
-    return dict(status=status, returncode=returncode, **totals)
+    fails = re.findall(r"^@fail (.*)$", output, re.M)
+    details = ("; ".join(fails) if fails
+               else f"exit code {returncode}" if status == "crashed" else "")
+    return dict(status=status, returncode=returncode, details=details,
+                **totals)
 
 
 def run_logged(cmd, log, cwd=None):
@@ -289,7 +305,6 @@ def run_logged(cmd, log, cwd=None):
 
 def app_backend(app):
     return app[len("integration_app_"):].removesuffix(".exe")
-
 
 def run_combo(args, family, combo):
     name = combo_name(combo)
@@ -320,25 +335,36 @@ def run_combo(args, family, combo):
         "\n".join(f"{k}: {v}" for k, v in axes.items()) + "\n", "utf-8"
     )
 
+    def log_path(*parts):
+        return (trace_dir.joinpath(*parts)).relative_to(args.out).as_posix()
+
     ok, output = run_logged(cmd, trace_dir / "configure.log")
     if not ok:
         status = ("unsupported" if "INTEGRATION_UNSUPPORTED" in output
                   else "configure-failed")
-        return [dict(row, variant="-", backend="-", status=status)]
+        return [dict(row, variant="-", backend="-", status=status,
+                     log=log_path("configure.log"))]
 
     ok, _ = run_logged(
         ["cmake", "--build", str(build_dir), "-j", str(args.build_jobs)],
         trace_dir / "build.log",
     )
     if not ok:
-        return [dict(row, variant="-", backend="-", status="build-failed")]
+        return [dict(row, variant="-", backend="-", status="build-failed",
+                     log=log_path("build.log"))]
 
     apps = sorted(
         f.name for f in (build_dir / "bin").iterdir()
         if f.is_file() and f.name.startswith("integration_app_")
         and f.suffix in ("", ".exe")
     )
-    rows = []
+    rows = [
+        dict(row, variant="-", backend=b, status="missing-backend",
+             details="not provided by the installed package",
+             log=log_path("configure.log"))
+        for b in args.expect_backends
+        if b not in {app_backend(a) for a in apps}
+    ]
     _, _, variants_fn = FAMILY_RULES[family]
     for variant in variants_fn(axes):
         (trace_dir / variant).mkdir(exist_ok=True)
@@ -349,11 +375,13 @@ def run_combo(args, family, combo):
                     log = trace_dir / variant / f"{backend}.txt"
                     result = run_app(args, app, run_dir, log)
                     rows.append(dict(row, variant=variant, backend=backend,
+                                     log=log_path(variant, f"{backend}.txt"),
                                      **result))
         except (subprocess.CalledProcessError, OSError) as e:
             (trace_dir / variant / "variant.log").write_text(str(e), "utf-8")
             rows.append(dict(row, variant=variant, backend="-",
-                             status="variant-failed"))
+                             status="variant-failed", details=str(e),
+                             log=log_path(variant, "variant.log")))
 
     if not args.keep_builds:
         shutil.rmtree(build_dir, ignore_errors=True)
@@ -366,26 +394,32 @@ def run_combo(args, family, combo):
 def write_summary(args, axis_names, rows):
     fields = (["combo"] + axis_names + ["variant", "backend", "status",
               "returncode", "scenarios", "frames", "sym_hits", "sym_total",
-              "loc_hits", "loc_total"])
+              "loc_hits", "loc_total", "log"])
     with open(args.out / "summary.csv", "w", newline="",
               encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=fields, restval="")
+        w = csv.DictWriter(f, fieldnames=fields, restval="",
+                           extrasaction="ignore")
         w.writeheader()
         w.writerows(rows)
 
     counts = {}
     for r in rows:
         counts[r["status"]] = counts.get(r["status"], 0) + 1
-    failed = [r for r in rows if r["status"] in FAILED_STATUSES]
+    failed_statuses = FAILED_STATUSES | (
+        set() if args.allow_unsupported else {"unsupported"}
+    )
+    failed = [r for r in rows if r["status"] in failed_statuses]
 
     lines = [f"## Integration matrix: {args.toolchain}", ""]
     lines += ["| status | runs |", "|---|---|"]
     lines += [f"| {s} | {n} |" for s, n in sorted(counts.items())]
     if failed:
         lines += ["", "### Failures", "",
-                  "| combo | variant | backend | status |", "|---|---|---|---|"]
+                  "| combo | variant | backend | status | details | log |",
+                  "|---|---|---|---|---|---|"]
         lines += [f"| {r['combo']} | {r['variant']} | {r['backend']} | "
-                  f"{r['status']} |" for r in failed]
+                  f"{r['status']} | {r.get('details', '')} | "
+                  f"{r.get('log', '')} |" for r in failed]
     text = "\n".join(lines) + "\n"
     (args.out / "summary.md").write_text(text, encoding="utf-8")
     step_summary = os.environ.get("GITHUB_STEP_SUMMARY")
@@ -393,6 +427,24 @@ def write_summary(args, axis_names, rows):
         with open(step_summary, "a", encoding="utf-8") as f:
             f.write(text)
     return failed
+
+
+def report_failures(args, failed):
+    """Prints one line per failure; as error annotations on GitHub Actions."""
+    in_actions = os.environ.get("GITHUB_ACTIONS") == "true"
+    for r in failed:
+        message = (f"{r['combo']} / {r['variant']} / {r['backend']}: "
+                   f"{r['status']}")
+        if r.get("details"):
+            message += f" ({r['details']})"
+        if r.get("log"):
+            message += f"; see {r['log']} in integration-traces"
+        if in_actions:
+            escaped = (message.replace("%", "%25").replace("\r", "%0D")
+                       .replace("\n", "%0A"))
+            print(f"::error title=integration {args.toolchain}::{escaped}")
+        else:
+            print(f"FAILED {message}")
 
 
 def main() -> int:
@@ -403,6 +455,12 @@ def main() -> int:
     parser.add_argument("--out", type=pathlib.Path, default=pathlib.Path(
                         "build/integration"))
     parser.add_argument("--cxx", help="C++ compiler")
+    parser.add_argument("--expect-backends",
+                        help="space-separated backends the package must "
+                        "provide; defaults per toolchain")
+    parser.add_argument("--allow-unsupported", action="store_true",
+                        help="don't fail combinations the toolchain can't "
+                        "build (e.g. LTO unavailable)")
     parser.add_argument("--strip", default="strip")
     parser.add_argument("--filter", default="",
                         help="regex; only combinations whose name matches")
@@ -417,6 +475,9 @@ def main() -> int:
                         help="list combinations and exit")
     args = parser.parse_args()
 
+    args.expect_backends = (EXPECTED_BACKENDS[args.toolchain]
+                            if args.expect_backends is None
+                            else args.expect_backends.split())
     family = FAMILIES[args.toolchain]
     pattern = re.compile(args.filter)
     combos = [c for c in combinations(args, family)
@@ -450,6 +511,7 @@ def main() -> int:
     rows.sort(key=lambda r: (r["combo"], r["variant"], r["backend"]))
     axis_names = list(FAMILY_RULES[family][0](args).keys())
     failed = write_summary(args, axis_names, rows)
+    report_failures(args, failed)
     print(f"{len(rows)} runs, {len(failed)} failed; see {args.out}")
     return 1 if failed else 0
 

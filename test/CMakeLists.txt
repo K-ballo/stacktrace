@@ -23,7 +23,11 @@ set_tests_properties(
 
 include(AddMultipleDefinitionsTest)
 
-foreach(_backend IN LISTS EGGS_STACKTRACE_BACKENDS)
+foreach(_backend IN LISTS EGGS_STACKTRACE_KNOWN_BACKENDS)
+    if(NOT TARGET _eggs_stacktrace_${_backend})
+        continue()
+    endif()
+
     add_multiple_definitions_test(
         eggs.stacktrace.verify_definitions.${_backend}
         _eggs_stacktrace_common

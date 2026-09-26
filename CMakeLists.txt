@@ -183,6 +183,37 @@ add_library(
     ALIAS _eggs_stacktrace_${EGGS_STACKTRACE_DEFAULT_BACKEND}
 )
 
+# -- Std target ----------------------------------------------------------------
+# stdeggs:: aliases to std:: when available, to eggs:: (default backend)
+# otherwise. Installed consumers get the default backend via Eggs::Stacktrace,
+# which the package config resolves on their machine and links in; an
+# $<INSTALL_INTERFACE:Eggs::Stacktrace> would be exported as the build tree's
+# default backend instead.
+
+include(CheckStdStacktrace)
+eggs_stacktrace_check_std_stacktrace(EGGS_STACKTRACE_STD_STACKTRACE_LIBRARY)
+
+add_library(_eggs_stacktrace_std INTERFACE)
+target_sources(
+    _eggs_stacktrace_std
+    INTERFACE
+        FILE_SET HEADERS BASE_DIRS include FILES include/stdeggs/stacktrace.hpp
+)
+target_compile_features(_eggs_stacktrace_std INTERFACE cxx_std_11)
+target_link_libraries(
+    _eggs_stacktrace_std
+    INTERFACE
+        $<BUILD_INTERFACE:_eggs_stacktrace_${EGGS_STACKTRACE_DEFAULT_BACKEND}>
+        ${EGGS_STACKTRACE_STD_STACKTRACE_LIBRARY}
+)
+set_target_properties(
+    _eggs_stacktrace_std
+    PROPERTIES
+        EXPORT_NAME Stacktrace::Std
+        VERIFY_INTERFACE_HEADER_SETS ${BUILD_TESTING}
+)
+add_library(Eggs::Stacktrace::Std ALIAS _eggs_stacktrace_std)
+
 #
 # Examples
 #
@@ -255,6 +286,18 @@ if(ENABLE_INSTALL)
     eggs_stacktrace_install_backend(execinfo)
     eggs_stacktrace_install_backend(libbacktrace)
     eggs_stacktrace_install_backend(win32)
+
+    install(
+        TARGETS _eggs_stacktrace_std
+        EXPORT EggsStacktraceStdTargets
+        FILE_SET HEADERS DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+    )
+    install(
+        EXPORT EggsStacktraceStdTargets
+        NAMESPACE Eggs::
+        FILE eggs.stacktrace-std-targets.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/eggs.stacktrace
+    )
 
     install(
         FILES

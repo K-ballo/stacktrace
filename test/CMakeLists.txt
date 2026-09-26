@@ -12,7 +12,8 @@ add_test(
     NAME eggs.stacktrace.verify_headers
     COMMAND
         ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target
-        _eggs_stacktrace_common_verify_interface_header_sets --config $<CONFIG>
+        _eggs_stacktrace_common_verify_interface_header_sets
+        _eggs_stacktrace_std_verify_interface_header_sets --config $<CONFIG>
 )
 set_tests_properties(
     eggs.stacktrace.verify_headers
@@ -38,6 +39,20 @@ foreach(_backend IN LISTS EGGS_STACKTRACE_BACKENDS)
         PROPERTIES LABELS "header" RESOURCE_LOCK cmake_build
     )
 endforeach()
+
+add_multiple_definitions_test(
+    eggs.stacktrace.verify_definitions.std
+    _eggs_stacktrace_common
+    _eggs_stacktrace_std
+)
+set_target_properties(
+    eggs.stacktrace.verify_definitions.std
+    PROPERTIES FOLDER "header"
+)
+set_tests_properties(
+    eggs.stacktrace.verify_definitions.std
+    PROPERTIES LABELS "header" RESOURCE_LOCK cmake_build
+)
 
 # Helper - creates a test executable and registers it with CTest.
 function(add_lib_test name)
@@ -67,6 +82,35 @@ endfunction()
 add_lib_test(stacktrace_entry)
 add_lib_test(stacktrace)
 add_lib_test(stacktrace_formatter)
+
+# -- stdeggs tests ---------------------------------------------------------------
+
+# Helper - creates a stdeggs test executable, with optional compile definitions.
+function(add_stdeggs_test name)
+    add_executable(eggs.stacktrace.test.${name} stdeggs.cpp)
+    target_sources(
+        eggs.stacktrace.test.${name}
+        PRIVATE
+            FILE_SET private_headers
+                TYPE HEADERS
+                BASE_DIRS ${CMAKE_CURRENT_SOURCE_DIR}
+                FILES support.hpp
+    )
+    target_link_libraries(
+        eggs.stacktrace.test.${name}
+        PRIVATE Eggs::Stacktrace::Std
+    )
+    target_compile_definitions(eggs.stacktrace.test.${name} PRIVATE ${ARGN})
+
+    add_test(
+        NAME eggs.stacktrace.test.${name}
+        COMMAND eggs.stacktrace.test.${name}
+    )
+    set_tests_properties(eggs.stacktrace.test.${name} PROPERTIES LABELS "unit")
+endfunction()
+
+add_stdeggs_test(stdeggs)
+add_stdeggs_test(stdeggs_use_eggs EGGS_STACKTRACE_STD_USE_EGGS)
 
 # -- libbacktrace backend test ---------------------------------------------------
 

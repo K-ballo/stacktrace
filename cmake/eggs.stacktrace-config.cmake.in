@@ -48,4 +48,14 @@ if(NOT TARGET Eggs::Stacktrace)
     unset(_eggs_stacktrace_default)
 endif()
 
+# Eggs::Stacktrace::Std falls back to Eggs::Stacktrace, created above.
+if(NOT TARGET Eggs::Stacktrace::Std)
+    include("${CMAKE_CURRENT_LIST_DIR}/eggs.stacktrace-std-targets.cmake")
+    set_property(
+        TARGET Eggs::Stacktrace::Std
+        APPEND
+        PROPERTY INTERFACE_LINK_LIBRARIES Eggs::Stacktrace
+    )
+endif()
+
 check_required_components(Eggs.Stacktrace)

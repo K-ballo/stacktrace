@@ -87,6 +87,30 @@ IMAGEHLP_LINE64 get_line_info(void* address) noexcept
     return line;
 }
 
+// Whether `symbol`, of unknown size, is the start of the function containing
+// `addr`. Must be called with the DbgHelp lock held.
+bool starts_function_at(DWORD64 symbol, DWORD64 addr) noexcept
+{
+#if defined(_M_X64) || defined(_M_ARM64)
+    // Every function that makes calls, as every frame but the innermost of a
+    // trace does, has unwind data giving its bounds.
+    DWORD64 image_base = 0;
+    PRUNTIME_FUNCTION const function =
+        ::RtlLookupFunctionEntry(addr, &image_base, nullptr);
+    if (function != nullptr) {
+        return image_base + function->BeginAddress == symbol;
+    }
+#endif
+    // Otherwise, only when there are no private symbols (and hence no line
+    // info) covering the address, whose function DbgHelp would have found.
+    IMAGEHLP_LINE64 line = {};
+    line.SizeOfStruct = sizeof(IMAGEHLP_LINE64);
+    DWORD displacement = 0;
+    return ::SymGetLineFromAddr64(
+               ::GetCurrentProcess(), addr, &displacement, &line
+           ) == FALSE;
+}
+
 } // namespace
 
 void capture(
@@ -156,11 +180,23 @@ std::string symbolize_description(void* address)
 
     std::lock_guard<std::mutex> const lock(dbg_mutex());
     DWORD64 const addr = reinterpret_cast<DWORD64>(address) - 1;
+    DWORD64 displacement = 0;
     bool const found = with_module_refresh([&]() noexcept {
-        return ::SymFromAddr(::GetCurrentProcess(), addr, nullptr, &buf.sym) !=
-               FALSE;
+        return ::SymFromAddr(
+                   ::GetCurrentProcess(), addr, &displacement, &buf.sym
+               ) != FALSE;
     });
     if (!found) return {};
+
+    // Without a symbol covering the address, DbgHelp returns the nearest
+    // preceding one instead: functions with internal linkage have no public
+    // symbol, and MSVC replaces overlong decorated names with a hash that
+    // DbgHelp skips. Reject those rather than report a neighbor's name.
+    if (buf.sym.Size != 0) {
+        if (displacement >= buf.sym.Size) return {};
+    } else if (!starts_function_at(buf.sym.Address, addr)) {
+        return {};
+    }
     return buf.sym.Name;
 }
 

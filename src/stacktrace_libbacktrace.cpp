@@ -6,6 +6,11 @@
 // See accompanying file LICENSE.txt or copy at
 // http://www.boost.org/LICENSE_1_0.txt
 
+// dladdr() is a GNU extension; expose it before any system headers.
+#ifndef _GNU_SOURCE
+#    define _GNU_SOURCE
+#endif
+
 #include <eggs/stacktrace.hpp>
 
 #include <cstddef>
@@ -25,6 +30,12 @@
 #    include <backtrace.h>
 #endif
 #include <cxxabi.h>
+#if defined(__has_include)
+#    if __has_include(<dlfcn.h>)
+#        include <dlfcn.h>
+#        define EGGS_STACKTRACE_HAVE_DLADDR
+#    endif
+#endif
 
 namespace eggs {
 namespace detail {
@@ -77,6 +88,15 @@ struct capture_ctx
     }
 };
 
+std::string demangle(char const* symname)
+{
+    int status = -1;
+    std::unique_ptr<char, void (*)(void*)> const demangled(
+        abi::__cxa_demangle(symname, nullptr, nullptr, &status), &std::free
+    );
+    return (status == 0 && demangled != nullptr) ? demangled.get() : symname;
+}
+
 struct syminfo_ctx
 {
     std::string result;
@@ -91,14 +111,8 @@ struct syminfo_ctx
         if (symname == nullptr) return;
 
         auto& self = *static_cast<syminfo_ctx*>(data);
-        int status = -1;
-        std::unique_ptr<char, void (*)(void*)> const demangled(
-            abi::__cxa_demangle(symname, nullptr, nullptr, &status), &std::free
-        );
         try {
-            self.result = (status == 0 && demangled != nullptr)
-                              ? demangled.get()
-                              : symname;
+            self.result = demangle(symname);
         } catch (...) {
             self.error = std::current_exception();
         }
@@ -200,6 +214,17 @@ std::string symbolize_description(void* address)
         &syminfo_ctx::on_error, &ctx
     );
     if (ctx.error) std::rethrow_exception(ctx.error);
+
+#ifdef EGGS_STACKTRACE_HAVE_DLADDR
+    // libbacktrace only knows the modules loaded when its state was created,
+    // so it can't name frames in modules loaded later; the dynamic linker
+    // can, for exported symbols.
+    if (ctx.result.empty()) {
+        ::Dl_info info{};
+        if (::dladdr(address, &info) != 0 && info.dli_sname != nullptr)
+            return demangle(info.dli_sname);
+    }
+#endif
     return ctx.result;
 }
 

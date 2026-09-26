@@ -30,9 +30,10 @@ function(eggs_stacktrace_check_libbacktrace_backend out_var)
     )
     if(NOT TARGET _eggs_stacktrace_libbacktrace_support)
         add_library(_eggs_stacktrace_libbacktrace_support INTERFACE)
+        # CMAKE_DL_LIBS for the dladdr() fallback.
         target_link_libraries(
             _eggs_stacktrace_libbacktrace_support
-            INTERFACE Libbacktrace::Libbacktrace
+            INTERFACE Libbacktrace::Libbacktrace ${CMAKE_DL_LIBS}
         )
     endif()
 endfunction()

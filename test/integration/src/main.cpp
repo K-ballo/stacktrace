@@ -13,8 +13,10 @@
 //   @scenario <scenario> frames=<n> sym=<hits>/<total> loc=<hits>/<total>
 //
 // Checks are deliberately minimal: a non-null backend must capture a
-// non-empty trace, and a capped capture must respect its cap. Whether
-// names and source locations resolve is reported, never enforced.
+// non-empty trace, a capped capture must respect its cap, and frame 0, when
+// named, must be the function that captured (or the throw site, for a capture
+// skipping an exception constructor). Whether names and source locations
+// resolve is reported, never enforced.
 
 #include <eggs/stacktrace.hpp>
 
@@ -110,6 +112,17 @@ void report(char const* scenario, traced_context const& ctx)
     );
 
     if (!is_null_backend) check(!ctx.trace.empty(), scenario, "empty trace");
+    // Frame 0 need not have a name, but a name must be the right one.
+    if (ctx.top != nullptr && !ctx.trace.empty()) {
+        std::string const top = ctx.trace[0].description();
+        if (!top.empty() && top.find(ctx.top) == std::string::npos) {
+            std::printf(
+                "@fail %s frame 0 is \"%.120s\", expected %s\n", scenario,
+                top.c_str(), ctx.top
+            );
+            ++failures;
+        }
+    }
     if (ctx.max_frames != 0) {
         check(ctx.trace.size() <= ctx.max_frames, scenario, "exceeds max");
     }

@@ -42,6 +42,9 @@ struct anchor
 struct context
 {
     std::vector<anchor> anchors;
+    // The function expected at frame 0, when predictable. A frame 0 named
+    // anything else is a wrong name, or a wrong skip.
+    char const* top = nullptr;
 
     void note(char const* name, char const* file, int line)
     {

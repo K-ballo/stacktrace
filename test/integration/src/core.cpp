@@ -28,13 +28,14 @@
 #    define INTEGRATION_COLD __attribute__((cold))
 #endif
 
-// Records the enclosing function `name` as an anchor at this line, then
-// captures the current stacktrace.
-#define INTEGRATION_CAPTURE(ctx, name) \
-    ((ctx).note(name, __FILE__, __LINE__), ::eggs::stacktrace::current())
+// Records the enclosing function `name` as an anchor at this line, and as
+// the function expected at frame 0, then captures the current stacktrace.
+#define INTEGRATION_CAPTURE(ctx, name)                       \
+    ((ctx).note(name, __FILE__, __LINE__), (ctx).top = name, \
+     ::eggs::stacktrace::current())
 
-#define INTEGRATION_CAPTURE_N(ctx, name, skip, max_depth) \
-    ((ctx).note(name, __FILE__, __LINE__),                \
+#define INTEGRATION_CAPTURE_N(ctx, name, skip, max_depth)    \
+    ((ctx).note(name, __FILE__, __LINE__), (ctx).top = name, \
      ::eggs::stacktrace::current(skip, max_depth))
 
 namespace integration {
@@ -102,7 +103,8 @@ struct traced_error : std::runtime_error
     eggs::stacktrace trace;
 
     // skip=1: the trace starts at the throw site, not in this constructor.
-    traced_error()
+    // Not inlined, or skip=1 would skip the throw site instead.
+    INTEGRATION_NOINLINE traced_error()
         : std::runtime_error("traced_error"),
           trace(eggs::stacktrace::current(1))
     {
@@ -112,6 +114,7 @@ struct traced_error : std::runtime_error
 template <typename T>
 [[noreturn]] INTEGRATION_NOINLINE void throw_traced(traced_context& ctx)
 {
+    ctx.top = "throw_traced";
     INTEGRATION_CALL(ctx, "throw_traced", throw traced_error());
 }
 
@@ -144,7 +147,10 @@ struct unwind_probe
     unwind_probe(unwind_probe const&) = delete;
     unwind_probe& operator=(unwind_probe const&) = delete;
 
-    ~unwind_probe() { ctx.trace = INTEGRATION_CAPTURE(ctx, "unwind_probe"); }
+    INTEGRATION_NOINLINE ~unwind_probe()
+    {
+        ctx.trace = INTEGRATION_CAPTURE(ctx, "unwind_probe");
+    }
 };
 
 INTEGRATION_NOINLINE void unwind_thrower(traced_context& ctx)
@@ -212,6 +218,9 @@ INTEGRATION_NOINLINE void function_entry(traced_context& ctx)
     // The lambda's name is derived from the enclosing function's.
     std::function<void()> const fn = [&ctx] {
         ctx.trace = INTEGRATION_CAPTURE(ctx, "function_entry");
+        // May be inlined into std::function's invoker, whose name need not
+        // mention function_entry.
+        ctx.top = nullptr;
     };
     INTEGRATION_CALL(ctx, "function_entry", invoke_function(ctx, fn));
 }

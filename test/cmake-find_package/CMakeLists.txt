@@ -15,6 +15,13 @@ set(CMAKE_MSVC_DEBUG_INFORMATION_FORMAT
 
 find_package(Eggs.Stacktrace REQUIRED)
 
+# Check for a real backend.
+get_target_property(_backend Eggs::Stacktrace ALIASED_TARGET)
+if(_backend STREQUAL "Eggs::Stacktrace::Null")
+    message(FATAL_ERROR "Eggs::Stacktrace resolved to the Null backend")
+endif()
+message(STATUS "Eggs::Stacktrace backend: ${_backend}")
+
 add_executable(consumer_verify main.cpp)
 target_link_libraries(consumer_verify PRIVATE Eggs::Stacktrace)
 

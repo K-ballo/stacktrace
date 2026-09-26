@@ -27,6 +27,13 @@ include(FetchContent)
 FetchContent_Declare(Eggs.Stacktrace SOURCE_DIR "${EGGS_STACKTRACE_SOURCE_DIR}")
 FetchContent_MakeAvailable(Eggs.Stacktrace)
 
+# Check for a real backend.
+get_target_property(_backend Eggs::Stacktrace ALIASED_TARGET)
+if(_backend STREQUAL "_eggs_stacktrace_null")
+    message(FATAL_ERROR "Eggs::Stacktrace resolved to the Null backend")
+endif()
+message(STATUS "Eggs::Stacktrace backend: ${_backend}")
+
 add_executable(consumer_verify main.cpp)
 target_link_libraries(consumer_verify PRIVATE Eggs::Stacktrace)
 

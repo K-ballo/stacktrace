@@ -51,3 +51,8 @@ endforeach()
 
 enable_testing()
 add_test(NAME verify COMMAND consumer_verify)
+# Printed by example/basic.cpp (copied as main.cpp) when the trace is empty.
+set_tests_properties(
+    verify
+    PROPERTIES FAIL_REGULAR_EXPRESSION "no frames captured"
+)

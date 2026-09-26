@@ -85,7 +85,8 @@ class Value:
 #          debuglink (== as-built), LTO with clang
 #   msvc:  /Zi (== /Z7), exe moved away from its PDB (== as-built),
 #          /OPT:ICF and /INCREMENTAL with clang-cl
-#   apple: every debug-info flag and variant (execinfo reads no DWARF), LTO
+#   apple: every debug-info flag and DWARF variant (execinfo reads no DWARF),
+#          LTO
 
 LTO = Value("lto", cmake=("-DCMAKE_INTERPROCEDURAL_OPTIMIZATION=ON",))
 
@@ -123,7 +124,7 @@ def apple_valid(args, c):
 
 
 def apple_variants(c):
-    return ["as-built"]
+    return ["as-built", "strip-x", "strip-all"]
 
 
 def msvc_axes(args):
@@ -243,6 +244,18 @@ def variant_dir(args, family, variant, build_dir):
                 tool([args.strip, "--strip-debug", f.name], cwd=dst)
             elif variant == "strip-all":
                 tool([args.strip, "--strip-all", f.name], cwd=dst)
+        yield dst
+    elif family == "apple":
+        # `dladdr` names come from the symbol table: -x drops local symbols,
+        # a plain strip drops everything not needed for dynamic linking
+        # (libraries only take -x). Stripping invalidates the code signature,
+        # which arm64 requires, so re-sign ad hoc.
+        for f in copy_binaries(bin_dir, dst, set()):
+            if variant == "strip-x" or f.suffix in (".dylib", ".so"):
+                tool([args.strip, "-x", f.name], cwd=dst)
+            elif variant == "strip-all":
+                tool([args.strip, f.name], cwd=dst)
+            tool(["codesign", "--force", "--sign", "-", f.name], cwd=dst)
         yield dst
     elif family == "msvc" and variant == "no-pdb":
         # Copied away from their PDBs, which are also hidden, so that DbgHelp

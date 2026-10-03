@@ -137,27 +137,14 @@ if(MSVC)
     )
 endif()
 
-# -- Backend selection -----------------------------------------------------
+# -- Backend helpers -------------------------------------------------------
 
-# eggs_stacktrace_want_backend(<name> <out-var>)
+# eggs_stacktrace_add_backend(<name>)
 #
-# Sets <out-var> ON if <name> should be attempted: always, unless
-# EGGS_STACKTRACE_BACKENDS is non-empty and doesn't list it.
-macro(eggs_stacktrace_want_backend name out_var)
-    if(
-        EGGS_STACKTRACE_BACKENDS
-        AND NOT "${name}" IN_LIST EGGS_STACKTRACE_BACKENDS
-    )
-        set(${out_var} OFF)
-    else()
-        set(${out_var} ON)
-    endif()
-endmacro()
-
-# -- Backend macro -------------------------------------------------------------
-
-macro(eggs_stacktrace_add_backend name)
+# Defines the _eggs_stacktrace_<name> target.
+function(eggs_stacktrace_add_backend name)
     set(_export "${EGGS_STACKTRACE_BACKEND_EXPORT_${name}}")
+    string(TOUPPER "${name}" _upper)
     add_library(
         _eggs_stacktrace_${name}
         STATIC
@@ -171,6 +158,12 @@ macro(eggs_stacktrace_add_backend name)
             $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     )
     target_compile_features(_eggs_stacktrace_${name} PUBLIC cxx_std_11)
+    if(EGGS_STACKTRACE_${_upper}_DEFINITIONS)
+        target_compile_definitions(
+            _eggs_stacktrace_${name}
+            PRIVATE ${EGGS_STACKTRACE_${_upper}_DEFINITIONS}
+        )
+    endif()
     set_target_properties(
         _eggs_stacktrace_${name}
         PROPERTIES
@@ -187,76 +180,53 @@ macro(eggs_stacktrace_add_backend name)
                     "${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>"
         )
     endif()
-    if(NOT "${ARGN}" STREQUAL "")
-        target_link_libraries(_eggs_stacktrace_${name} PUBLIC ${ARGN})
+    if(TARGET _eggs_stacktrace_${name}_support)
+        target_link_libraries(
+            _eggs_stacktrace_${name}
+            PUBLIC _eggs_stacktrace_${name}_support
+        )
     endif()
     add_library(Eggs::Stacktrace::${_export} ALIAS _eggs_stacktrace_${name})
-    unset(_export)
+endfunction()
+
+# eggs_stacktrace_add_checked_backend(<name>)
+#
+# Adds backend <name> if it is wanted and its dependencies check out.
+macro(eggs_stacktrace_add_checked_backend name)
+    string(TOUPPER "${name}" _upper)
+    if(
+        NOT EGGS_STACKTRACE_BACKENDS
+        OR "${name}" IN_LIST EGGS_STACKTRACE_BACKENDS
+    )
+        include(Check${EGGS_STACKTRACE_BACKEND_EXPORT_${name}}Backend)
+        cmake_language(
+            CALL eggs_stacktrace_check_${name}_backend
+            EGGS_STACKTRACE_HAVE_${_upper}
+        )
+        if(EGGS_STACKTRACE_HAVE_${_upper})
+            eggs_stacktrace_add_backend(${name})
+            list(
+                APPEND EGGS_STACKTRACE_CHECKED_BACKENDS
+                ${EGGS_STACKTRACE_BACKEND_EXPORT_${name}}
+            )
+        elseif("${name}" IN_LIST EGGS_STACKTRACE_BACKENDS)
+            message(
+                FATAL_ERROR
+                "Eggs.Stacktrace: backend '${name}' was requested in "
+                "EGGS_STACKTRACE_BACKENDS but is not available on this platform."
+            )
+        endif()
+    endif()
+    unset(_upper)
 endmacro()
 
 # -- Backend targets -----------------------------------------------------------
 
+set(EGGS_STACKTRACE_CHECKED_BACKENDS)
 eggs_stacktrace_add_backend(null)
-
-eggs_stacktrace_want_backend(execinfo _want_execinfo)
-if(_want_execinfo)
-    include(CheckExecinfoBackend)
-    eggs_stacktrace_check_execinfo_backend(EGGS_STACKTRACE_HAVE_EXECINFO)
-    if(EGGS_STACKTRACE_HAVE_EXECINFO)
-        eggs_stacktrace_add_backend(execinfo _eggs_stacktrace_execinfo_support)
-    elseif("execinfo" IN_LIST EGGS_STACKTRACE_BACKENDS)
-        message(
-            FATAL_ERROR
-            "Eggs.Stacktrace: backend 'execinfo' was requested in "
-            "EGGS_STACKTRACE_BACKENDS but is not available on this platform."
-        )
-    endif()
-else()
-    set(EGGS_STACKTRACE_HAVE_EXECINFO OFF)
-endif()
-
-eggs_stacktrace_want_backend(libbacktrace _want_libbacktrace)
-if(_want_libbacktrace)
-    include(CheckLibbacktraceBackend)
-    eggs_stacktrace_check_libbacktrace_backend(
-        EGGS_STACKTRACE_HAVE_LIBBACKTRACE
-    )
-    if(EGGS_STACKTRACE_HAVE_LIBBACKTRACE)
-        eggs_stacktrace_add_backend(
-            libbacktrace
-            _eggs_stacktrace_libbacktrace_support
-        )
-        target_compile_definitions(
-            _eggs_stacktrace_libbacktrace
-            PRIVATE
-                EGGS_STACKTRACE_BACKTRACE_INCLUDE_FILE="${EGGS_STACKTRACE_LIBBACKTRACE_HEADER}"
-        )
-    elseif("libbacktrace" IN_LIST EGGS_STACKTRACE_BACKENDS)
-        message(
-            FATAL_ERROR
-            "Eggs.Stacktrace: backend 'libbacktrace' was requested in "
-            "EGGS_STACKTRACE_BACKENDS but is not available on this platform."
-        )
-    endif()
-else()
-    set(EGGS_STACKTRACE_HAVE_LIBBACKTRACE OFF)
-endif()
-
-eggs_stacktrace_want_backend(win32 _want_win32)
-if(_want_win32)
-    if(WIN32)
-        set(EGGS_STACKTRACE_HAVE_WIN32 ON)
-        eggs_stacktrace_add_backend(win32 DbgHelp)
-    elseif("win32" IN_LIST EGGS_STACKTRACE_BACKENDS)
-        message(
-            FATAL_ERROR
-            "Eggs.Stacktrace: backend 'win32' was requested in "
-            "EGGS_STACKTRACE_BACKENDS but is not available on this platform."
-        )
-    endif()
-else()
-    set(EGGS_STACKTRACE_HAVE_WIN32 OFF)
-endif()
+eggs_stacktrace_add_checked_backend(execinfo)
+eggs_stacktrace_add_checked_backend(libbacktrace)
+eggs_stacktrace_add_checked_backend(win32)
 
 # An empty EGGS_STACKTRACE_BACKENDS means auto-detect.
 if(NOT EGGS_STACKTRACE_BACKENDS)
@@ -284,15 +254,14 @@ if(EGGS_STACKTRACE_DEFAULT_BACKEND)
         )
     endif()
 else()
-    if(TARGET _eggs_stacktrace_libbacktrace)
-        set(EGGS_STACKTRACE_DEFAULT_BACKEND libbacktrace)
-    elseif(TARGET _eggs_stacktrace_execinfo)
-        set(EGGS_STACKTRACE_DEFAULT_BACKEND execinfo)
-    elseif(TARGET _eggs_stacktrace_win32)
-        set(EGGS_STACKTRACE_DEFAULT_BACKEND win32)
-    else()
-        set(EGGS_STACKTRACE_DEFAULT_BACKEND null)
-    endif()
+    set(EGGS_STACKTRACE_DEFAULT_BACKEND null)
+    foreach(_backend IN ITEMS libbacktrace execinfo win32)
+        if(TARGET _eggs_stacktrace_${_backend})
+            set(EGGS_STACKTRACE_DEFAULT_BACKEND ${_backend})
+            break()
+        endif()
+    endforeach()
+    unset(_backend)
 endif()
 
 add_library(
@@ -377,6 +346,7 @@ if(ENABLE_INSTALL)
         FILES
             cmake/CheckExecinfoBackend.cmake
             cmake/CheckLibbacktraceBackend.cmake
+            cmake/CheckWin32Backend.cmake
             cmake/FindLibbacktrace.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/eggs.stacktrace
     )

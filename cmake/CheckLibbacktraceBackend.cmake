@@ -15,8 +15,9 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_LIST_DIR}")
 #
 # Checks whether libbacktrace is present and links successfully.
 # Sets <out-var> as an internal cache boolean. On success, also defines the
-# INTERFACE library _eggs_stacktrace_libbacktrace_support. Additionaly,
-# sets EGGS_STACKTRACE_LIBBACKTRACE_HEADER to the resolved header path..
+# INTERFACE library _eggs_stacktrace_libbacktrace_support. Additionally,
+# sets EGGS_STACKTRACE_LIBBACKTRACE_DEFINITIONS to the private compile
+# definitions the backend needs, including the resolved header path.
 function(eggs_stacktrace_check_libbacktrace_backend out_var)
     find_package(Libbacktrace QUIET)
     set(${out_var} ${Libbacktrace_FOUND} CACHE INTERNAL "")
@@ -24,8 +25,8 @@ function(eggs_stacktrace_check_libbacktrace_backend out_var)
         return()
     endif()
 
-    set(EGGS_STACKTRACE_LIBBACKTRACE_HEADER
-        "${Libbacktrace_HEADER}"
+    set(EGGS_STACKTRACE_LIBBACKTRACE_DEFINITIONS
+        "EGGS_STACKTRACE_BACKTRACE_INCLUDE_FILE=\"${Libbacktrace_HEADER}\""
         PARENT_SCOPE
     )
     if(NOT TARGET _eggs_stacktrace_libbacktrace_support)

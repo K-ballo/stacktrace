@@ -23,7 +23,7 @@ jobs:
 
       - name: Scan files for non-ASCII characters
         run: |
-          if grep -rnP '[^\x00-\x7F]' --exclude-dir=.git .; then
+          if grep -rnIP '[^\x00-\x7F]' --exclude-dir=.git .; then
             echo "error: non-ASCII characters found."
             exit 1
           fi

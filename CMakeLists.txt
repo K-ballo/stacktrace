@@ -116,7 +116,10 @@ target_sources(
             BASE_DIRS include
             FILES
                 include/eggs/stacktrace.hpp
+                include/eggs/stacktrace/pin_frame.hpp
+                include/eggs/stacktrace/detail/no_tail_calls.hpp
                 include/eggs/stacktrace/detail/nodiscard.hpp
+                include/eggs/stacktrace/detail/noinline.hpp
     PRIVATE
         FILE_SET private_headers
             TYPE HEADERS

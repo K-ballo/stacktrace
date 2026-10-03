@@ -7,6 +7,7 @@
 // http://www.boost.org/LICENSE_1_0.txt
 
 #include <eggs/stacktrace.hpp>
+#include <eggs/stacktrace/pin_frame.hpp>
 
 #include <cstdint>
 #include <limits>
@@ -15,20 +16,11 @@
 
 #include "detail/backend.hpp"
 
-#if defined(__clang__)
-#    define EGGS_STACKTRACE_NO_TAIL_CALLS __attribute__((disable_tail_calls))
-#elif defined(__GNUC__)
-#    define EGGS_STACKTRACE_NO_TAIL_CALLS \
-        __attribute__((optimize("no-optimize-sibling-calls")))
-#else
-#    define EGGS_STACKTRACE_NO_TAIL_CALLS
-#endif
-
 namespace eggs {
 
 // -- stacktrace::current --------------------------------------------------------
 
-EGGS_STACKTRACE_NO_TAIL_CALLS
+EGGS_STACKTRACE_PIN_FRAME
 stacktrace stacktrace::current() noexcept
 {
     stacktrace st;
@@ -36,7 +28,7 @@ stacktrace stacktrace::current() noexcept
     return st;
 }
 
-EGGS_STACKTRACE_NO_TAIL_CALLS
+EGGS_STACKTRACE_PIN_FRAME
 stacktrace stacktrace::current(size_type skip) noexcept
 {
     if (skip == std::numeric_limits<size_type>::max()) return {};
@@ -48,7 +40,7 @@ stacktrace stacktrace::current(size_type skip) noexcept
     return st;
 }
 
-EGGS_STACKTRACE_NO_TAIL_CALLS
+EGGS_STACKTRACE_PIN_FRAME
 stacktrace stacktrace::current(size_type skip, size_type max_depth) noexcept
 {
     if (skip == std::numeric_limits<size_type>::max()) return {};

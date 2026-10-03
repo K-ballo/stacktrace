@@ -44,6 +44,19 @@ void foo()
 }
 ```
 
+## Pinning Frames
+
+`EGGS_STACKTRACE_PIN_FRAME` is a best-effort attribute that keeps a function's
+own frame in stacktraces under optimization:
+
+```cpp
+EGGS_STACKTRACE_PIN_FRAME void handle_request()
+{
+    auto st = eggs::stacktrace::current();
+    // ...
+}
+```
+
 ## CMake Integration
 
 ```cmake

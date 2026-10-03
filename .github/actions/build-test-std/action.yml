@@ -53,6 +53,8 @@ runs:
         cmake --preset ${{ inputs.preset }} -B "${build_dir}" \
           "${compiler_args[@]}" \
           -DBUILD_EXAMPLES=ON -DBUILD_TESTING=ON \
+          -DEGGS_EXPECTED_BACKENDS="$EGGS_EXPECTED_BACKENDS" \
+          -DEGGS_EXPECTED_DEFAULT_BACKEND="$EGGS_EXPECTED_DEFAULT_BACKEND" \
           -DCMAKE_CXX_STANDARD=${std} || failed=1
         echo "::endgroup::"
 

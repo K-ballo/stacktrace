@@ -6,6 +6,11 @@
 # See accompanying file LICENSE.txt or copy at
 # http://www.boost.org/LICENSE_1_0.txt
 
+# -- Verify expected backends -------------------------------------------------
+
+include("${CMAKE_CURRENT_LIST_DIR}/consumer_backends.cmake")
+eggs_stacktrace_check_expected_backends()
+
 # -- Verify interface header sets ----------------------------------------------
 
 add_test(

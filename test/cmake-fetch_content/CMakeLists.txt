@@ -44,3 +44,6 @@ endforeach()
 
 enable_testing()
 add_test(NAME verify COMMAND consumer_verify)
+
+include("${CMAKE_CURRENT_LIST_DIR}/../consumer_backends.cmake")
+eggs_stacktrace_verify_backends()

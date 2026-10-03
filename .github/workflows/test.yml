@@ -20,6 +20,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
 
+    env:
+      EGGS_EXPECTED_BACKENDS: ${{ startsWith(matrix.os, 'windows') && 'Null;Win32' || startsWith(matrix.os, 'ubuntu') && 'Null;Execinfo;Libbacktrace' || 'Null;Execinfo' }}
+      EGGS_EXPECTED_DEFAULT_BACKEND: ${{ startsWith(matrix.os, 'windows') && 'Win32' || startsWith(matrix.os, 'ubuntu') && 'Libbacktrace' || 'Execinfo' }}
+
     strategy:
       fail-fast: false
       matrix:
@@ -233,6 +237,8 @@ jobs:
           cmake --preset ${{ matrix.preset }} -B build-consumer-fetch_content \
             "${compiler_args[@]}" \
             -DEGGS_STACKTRACE_SOURCE_DIR="${{ github.workspace }}" \
+            -DEGGS_EXPECTED_BACKENDS="$EGGS_EXPECTED_BACKENDS" \
+            -DEGGS_EXPECTED_DEFAULT_BACKEND="$EGGS_EXPECTED_DEFAULT_BACKEND" \
             -DCMAKE_CXX_STANDARD=${latest_std}
 
       - name: Test Consumer (FetchContent) - Build (Debug)
@@ -357,6 +363,8 @@ jobs:
         run: |
           cmake -S . -B build-consumer-find_package \
             -G "Ninja Multi-Config" \
+            -DEGGS_EXPECTED_BACKENDS="$EGGS_EXPECTED_BACKENDS" \
+            -DEGGS_EXPECTED_DEFAULT_BACKEND="$EGGS_EXPECTED_DEFAULT_BACKEND" \
             -DCMAKE_CXX_STANDARD=14 --debug-find
 
       - name: Test Consumer (find_package) - Build (Debug)

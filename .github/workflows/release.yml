@@ -53,6 +53,11 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      - name: Install CMake
+        uses: lukka/get-cmake@latest
+        with:
+          cmakeVersion: "4.4.0"
+
       - name: Set up MSVC environment
         if: startsWith(matrix.compiler, 'msvc') || startsWith(matrix.compiler, 'clang-cl')
         shell: pwsh
@@ -106,37 +111,24 @@ jobs:
         if: always() && runner.os == 'Linux'
         run: sudo rm -rf ~/.cache/apt/archives/lock ~/.cache/apt/archives/partial
 
-      - name: Configure (static)
-        run: cmake --preset ${{ matrix.preset }} -B build/${{ matrix.preset }}-static
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }} -B build/${{ matrix.preset }}
                -DBUILD_DOCS=ON
 
-      - name: Build (static, Release)
-        run: cmake --build build/${{ matrix.preset }}-static --config Release
+      - name: Build (Release)
+        run: cmake --build build/${{ matrix.preset }} --config Release
 
-      - name: Package (static)
-        working-directory: build/${{ matrix.preset }}-static
-        run: cpack -C Release -D "CPACK_PACKAGE_FILE_NAME=Eggs.Stacktrace-${{ github.ref_name }}-${{ matrix.package_suffix }}-static"
-
-      - name: Configure (shared)
-        run: cmake --preset ${{ matrix.preset }} -B build/${{ matrix.preset }}-shared
-               -DBUILD_SHARED_LIBS=ON
-
-      - name: Build (shared, Release)
-        run: cmake --build build/${{ matrix.preset }}-shared --config Release
-
-      - name: Package (shared)
-        working-directory: build/${{ matrix.preset }}-shared
-        run: cpack -C Release -D "CPACK_PACKAGE_FILE_NAME=Eggs.Stacktrace-${{ github.ref_name }}-${{ matrix.package_suffix }}-shared"
+      - name: Package
+        working-directory: build/${{ matrix.preset }}
+        run: cpack -C Release -D "CPACK_PACKAGE_FILE_NAME=Eggs.Stacktrace-${{ github.ref_name }}-${{ matrix.package_suffix }}"
 
       - name: Stage packages
         shell: bash
         run: |
           mkdir packages
           shopt -s nullglob
-          cp build/${{ matrix.preset }}-static/Eggs.Stacktrace-*.tar.gz \
-             build/${{ matrix.preset }}-static/Eggs.Stacktrace-*.zip \
-             build/${{ matrix.preset }}-shared/Eggs.Stacktrace-*.tar.gz \
-             build/${{ matrix.preset }}-shared/Eggs.Stacktrace-*.zip \
+          cp build/${{ matrix.preset }}/Eggs.Stacktrace-*.tar.gz \
+             build/${{ matrix.preset }}/Eggs.Stacktrace-*.zip \
              packages/
 
       - name: Upload packages

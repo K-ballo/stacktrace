@@ -9,7 +9,7 @@
 cmake_minimum_required(VERSION 4.0...4.4.0)
 project(
     Eggs.Stacktrace
-    VERSION 0.1.0
+    VERSION 1.0.0
     DESCRIPTION "A C++ stacktrace library"
     LANGUAGES CXX
 )

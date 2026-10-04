@@ -108,6 +108,7 @@ jobs:
 
       - name: Configure (static)
         run: cmake --preset ${{ matrix.preset }} -B build/${{ matrix.preset }}-static
+               -DBUILD_DOCS=ON
 
       - name: Build (static, Release)
         run: cmake --build build/${{ matrix.preset }}-static --config Release

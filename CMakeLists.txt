@@ -30,16 +30,19 @@ if(PROJECT_IS_TOP_LEVEL)
         string(APPEND CMAKE_SHARED_LINKER_FLAGS " /DEBUG")
     endif()
 
+    option(BUILD_DOCS "Build the documentation" ON)
     option(BUILD_EXAMPLES "Build the examples" ON)
     include(CTest)
     option(ENABLE_INSTALL "Generate install rules" ON)
 else()
     set_property(DIRECTORY PROPERTY SYSTEM ON)
 
+    option(EGGS_STACKTRACE_BUILD_DOCS "Build the documentation" OFF)
     option(EGGS_STACKTRACE_BUILD_EXAMPLES "Build the examples" OFF)
     option(EGGS_STACKTRACE_BUILD_TESTING "Build the test suite" OFF)
     option(EGGS_STACKTRACE_ENABLE_INSTALL "Generate install rules" OFF)
 
+    set(BUILD_DOCS ${EGGS_STACKTRACE_BUILD_DOCS})
     set(BUILD_EXAMPLES ${EGGS_STACKTRACE_BUILD_EXAMPLES})
     set(BUILD_TESTING ${EGGS_STACKTRACE_BUILD_TESTING})
     set(ENABLE_INSTALL ${EGGS_STACKTRACE_ENABLE_INSTALL})
@@ -268,6 +271,13 @@ add_library(
     Eggs::Stacktrace
     ALIAS _eggs_stacktrace_${EGGS_STACKTRACE_DEFAULT_BACKEND}
 )
+
+#
+# Documentation
+#
+if(BUILD_DOCS)
+    add_subdirectory(docs)
+endif()
 
 #
 # Examples

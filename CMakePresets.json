@@ -29,6 +29,7 @@
         "CMAKE_CXX_EXTENSIONS": "OFF",
         "CMAKE_COMPILE_WARNING_AS_ERROR": "ON",
         "CMAKE_LINK_WARNING_AS_ERROR": "ON",
+        "BUILD_DOCS": "OFF",
         "BUILD_EXAMPLES": "ON",
         "BUILD_TESTING": "ON",
         "ENABLE_INSTALL": "ON"
